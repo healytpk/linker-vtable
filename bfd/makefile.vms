@@ -38,7 +38,7 @@ endif
 
 OBJS:=$(OBJS),archive.obj,archive64.obj,archures.obj,bfd.obj,bfdio.obj,\
   binary.obj,cache.obj,coffgen.obj,compress.obj,corefile.obj,dwarf2.obj,\
-  elf.obj,format.obj,hash.obj,ihex.obj,init.obj,libbfd.obj,linker.obj,\
+  elf.obj,format.obj,hash.obj,ihex.obj,init.obj,libbfd.obj,linker.obj,polymorphism.obj,\
   opncls.obj,reloc.obj,section.obj,simple.obj,srec.obj,stab-syms.obj,\
   syms.obj,targets.obj,tekhex.obj,verilog.obj
 

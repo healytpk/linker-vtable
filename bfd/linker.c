@@ -24,6 +24,7 @@
 #include "libbfd.h"
 #include "bfdlink.h"
 #include "genlink.h"
+#include "polymorphism.h"
 
 /*
 SECTION
@@ -1396,6 +1397,8 @@ _bfd_generic_link_add_one_symbol (struct bfd_link_info *info,
   bool cycle;
 
   BFD_ASSERT (section != NULL);
+
+  Polymorphism_Process_Symbol(name);
 
   if (bfd_is_ind_section (section)
       || (flags & BSF_INDIRECT) != 0)

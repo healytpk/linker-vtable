@@ -39,6 +39,7 @@
 #include "ldfile.h"
 #include "ldemul.h"
 #include "ldctor.h"
+#include "polymorphism.h"
 #if BFD_SUPPORTS_PLUGINS
 #include "plugin.h"
 #include "plugin-api.h"
@@ -249,6 +250,7 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
 int
 main (int argc, char **argv)
 {
+  fprintf(stdout, "%s", "============== ld VTABLE =================\n");
   char *emulation;
   long start_time = get_run_time ();
 
@@ -628,6 +630,7 @@ main (int argc, char **argv)
   /* Prevent ld_cleanup from deleting the output file.  */
   output_filename = NULL;
 
+  Polymorphism_Print_Summary();
   xexit (0);
   return 0;
 }
