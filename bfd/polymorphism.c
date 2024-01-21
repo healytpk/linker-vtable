@@ -1,53 +1,103 @@
 #include "polymorphism.h"
 #include <assert.h>                             // assert
+#include <stddef.h>                             // NULL, size_t
 #include <stdlib.h>                             // abort
-#include <stddef.h>                             // NULL
-#include <string.h>                             // memset, strlen
-#include <stdio.h>                              // fprintf
-#include <threads.h>                            // once_flag, call_once
+#include <string.h>                             // memset, strlen, strcpy
+#include <stdio.h>                              // printf
 
-extern char *cplus_demangle_v3 (const char *mangled, int options);
+extern char *cplus_demangle_v3 (const char *mangled, int options);   // defined in libiberty/cp-demangle.c
 
-struct node {
-   struct node *next;
-   char buf[1u];
-};
-
-struct LinkedList {
-    struct node *head, *tail;
-};
-
-static struct LinkedList g_vtables = {0,0}, g_typeinfos = {0,0};
-
-static void LinkedList_insert(struct LinkedList *const ll, char const *const arg)
+static void abortwhy(char const *const p)
 {
-   struct node *const link = malloc( sizeof(struct node) + strlen(arg) );
-   link->next = NULL;
-   strcpy(link->buf, arg);
+    printf("\n========== %s ==========\n", p);
+    abort();
+}
 
+#define BYTES_PER_ALLOC (16384u)
+#define BUFSIZNODE (BYTES_PER_ALLOC - sizeof(void*) - 1u)
+#define TERM ('\r')
+
+struct Node {
+   void *next;
+   char buf[BUFSIZNODE];
+   char terminator;
+};
+
+typedef char my_static_assert0[ (BYTES_PER_ALLOC == sizeof(struct Node)) ? 1 : -1 ];
+
+struct List {
+    struct Node *head, *tail;
+};
+
+static struct List g_vtables = {NULL,NULL}, g_typeinfos = {NULL,NULL};
+
+static void Increment_Past_Null(char const **const pp)
+{
+    while ( '\0' != *(*pp)++ );
+}
+
+static struct Node *NewNode(char const *const arg)
+{
+   struct Node *const p = malloc( sizeof(struct Node) );
+   if ( NULL == p ) return NULL;
+   p->next = NULL;
+   memset(p->buf, TERM, sizeof p->buf);
+   p->terminator = TERM;
+   if ( strlen(arg) >= BUFSIZNODE ) abortwhy("Length of symbol is longer than (BUFSIZE-1)");
+   strcpy(p->buf, arg);   // strlen(arg) must be < BUFSIZNODE
+   return p;
+}
+
+static void List_append(struct List *const ll, char const *const arg)
+{
+   if ( NULL==ll || NULL==arg ) return;
+   size_t const arglen = strlen(arg);
+   if ( (0u == arglen) || (arglen >= BUFSIZNODE) ) return;
    if ( NULL == ll->head )
    {
-       ll->head = ll->tail = link;
+       printf("--- Creating the head\n");
+       ll->head = ll->tail = NewNode(arg);
+       if ( NULL == ll->head ) abortwhy("Failed to allocate head node");
        return;
    }
 
-   ll->tail->next = link;
-   ll->tail = link;
-}
-
-static int LinkedList_find(struct LinkedList const *const ll, char const *const arg)
-{
-   if ( NULL == ll ) return 0;
-
-   struct node const *p = ll->head;
-
-   while ( NULL != p )
-   {        
-      if ( 0 == strcmp(arg, p->buf) ) return 1;
-      p = p->next;
+   size_t list_current_len = 0u;
+   {
+       char const *p = ll->tail->buf;
+       while ( TERM != *p ) ++p;
+       list_current_len = p - ll->tail->buf;
    }
 
-    return 0;
+   //printf("list_current_len = %zu\n", list_current_len);
+
+   size_t const list_free_space = BUFSIZNODE - list_current_len - 1u;
+   if ( arglen < list_free_space )
+   {
+       //printf("--- Concatenating to current tail\n");
+       strcpy(ll->tail->buf + list_current_len, arg);
+       return;
+   }
+
+   printf("--- Creating a new tail\n");
+   struct Node *const newtail = NewNode(arg);
+   if ( NULL == newtail ) abortwhy("Failed to allocate new tail");
+   ll->tail->next = newtail;
+   ll->tail = newtail;
+}
+
+static int List_find(struct List const *const ll, char const *const arg)
+{
+   if ( NULL==ll || NULL==arg ) return 0;
+
+   for ( struct Node const *n = ll->head; NULL != n; n = n->next )
+   {
+       for ( char const *p = n->buf; TERM != *p; Increment_Past_Null(&p) )
+       {
+           if ( 0 == strcmp(p,arg) ) return 1;
+       }
+   }
+
+   return 0;
 }
 
 int Polymorphism_Process_Symbol(char const *const arg)
@@ -56,58 +106,60 @@ int Polymorphism_Process_Symbol(char const *const arg)
 
     if ( strlen(arg) < 6u ) return 0;
 
-    /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) LinkedList_insert( &g_vtables  , arg + 4u);
-    else if ( 0 == strncmp("_ZTI", arg, 4u) ) LinkedList_insert( &g_typeinfos, arg + 4u);
+    /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) List_append( &g_vtables  , arg + 4u );
+    else if ( 0 == strncmp("_ZTI", arg, 4u) ) List_append( &g_typeinfos, arg + 4u );
     else return 0;
 
     return 1;
 }
 
-size_t hash_code_from_typeinfo_name(char const *const buf);  /* defined lower down in this file */
+static size_t hash_code_from_typeinfo_name(char const *const buf);  /* defined lower down in this file */
 
 void Polymorphism_Print_Summary(void)
 {
-   struct node const *p = g_vtables.head;
-
-   if ( NULL == p )
+   if ( NULL == g_vtables.head )
    {
-      printf("list is empty\n");
+      printf("list of vtables is empty\n");
       return;
    }
 
-   for ( ; NULL != p; p = p->next )
-   {        
-      if ( 0 == LinkedList_find(&g_typeinfos, p->buf) ) continue;
-      printf("_Z%s - ", p->buf);
-      char *const tmp = malloc( strlen(p->buf) + 2u );
-      if ( NULL == tmp )
+   for ( struct Node const *n = g_vtables.head; NULL != n; n = n->next )
+   {
+      char const *p = n->buf;
+      for ( ; TERM != *p; Increment_Past_Null(&p) )
       {
-          printf("OUT OF MEMORY\n");
-          return;
-      }
-      tmp[0u] = '_'; tmp[1u] = 'Z'; tmp[2u] = '\0';
-      strcpy(tmp + 2u, p->buf);
-#if 0
-      char *const demangled = cplus_demangle_v3(tmp,0); //DMGL_PARAMS | DMGL_ANSI | DMGL_VERBOSE);
-      if ( NULL != demangled )
-      {
-          printf("%s", demangled);
-          if ( tmp != demangled )
+          if ( 0 == List_find(&g_typeinfos,p) ) continue;
+          printf("_Z%s", p);
+#if 0  // This code is crashing -- don't know why
+          char *const tmp = malloc( strlen(p) + 2u );
+          if ( NULL == tmp )
           {
-              //printf(" - about to free demangled - ");
-              free(demangled);
-              //printf(" - demangled freed - ");
+              printf("OUT OF MEMORY\n");
+              return;
           }
-      }
+          tmp[0u] = '_'; tmp[1u] = 'Z'; tmp[2u] = '\0';
+          strcpy(tmp + 2u, p);
+          char *const demangled = cplus_demangle_v3(tmp,0); //DMGL_PARAMS | DMGL_ANSI | DMGL_VERBOSE);
+          if ( NULL != demangled )
+          {
+              printf(" - %s", demangled);
+              if ( tmp != demangled )
+              {
+                  //printf(" - about to free demangled - ");
+                  free(demangled);
+                  //printf(" - demangled freed - ");
+              }
+          }
+          //printf(" - about to free tmp - ");
+          free(tmp);
+          //printf(" - tmp freed - ");
 #endif
-      //printf(" - about to free tmp - ");
-      free(tmp);
-      //printf(" - tmp freed - ");
-      printf(", hash_code = %zu\n", hash_code_from_typeinfo_name(p->buf));
+          printf(", hash_code = %zu\n", hash_code_from_typeinfo_name(p));
+      }
    }
 }
 
-size_t hash_code_from_typeinfo_name(char const *const buf)
+static size_t hash_code_from_typeinfo_name(char const *const buf)
 {
     static size_t const mul = (((size_t)0xc6a4a793U) << 32U) + (size_t)0x5bd1e995U;
     // Remove the bytes not divisible by the sizeof(size_t).  This
@@ -138,4 +190,3 @@ size_t hash_code_from_typeinfo_name(char const *const buf)
     hash = (hash ^ (hash >> 47U));
     return hash;
 }
-
