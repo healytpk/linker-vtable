@@ -1398,7 +1398,7 @@ _bfd_generic_link_add_one_symbol (struct bfd_link_info *info,
 
   BFD_ASSERT (section != NULL);
 
-  Polymorphism_Process_Symbol(name);
+  Polymorphism_Process_Symbol(name,value);
 
   if (bfd_is_ind_section (section)
       || (flags & BSF_INDIRECT) != 0)
