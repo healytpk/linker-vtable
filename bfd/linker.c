@@ -24,7 +24,6 @@
 #include "libbfd.h"
 #include "bfdlink.h"
 #include "genlink.h"
-#include "polymorphism.h"
 
 /*
 SECTION
