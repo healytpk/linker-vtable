@@ -17,6 +17,18 @@ static void abortwhy(char const *const p)
 #define BUFSIZNODE (BYTES_PER_ALLOC - sizeof(void*) - 1u)
 #define TERM ('\r')
 
+struct NodeOffset {
+   void *next;
+   size_t count;
+   ptrdiff_t offsets[ BYTES_PER_ALLOC / sizeof(ptrdiff_t) - (sizeof(void*)/sizeof(ptrdiff_t)) - !!(sizeof(void*)%sizeof(ptrdiff_t)) - 1u ];
+};
+
+struct ListOffset {
+    struct NodeOffset *head, *tail;
+};
+
+struct ListOffset g_vtables_offsets = {NULL,NULL}, g_typeinfos_offsets = {NULL,NULL};
+
 struct Node {
    void *next;
    char buf[BUFSIZNODE];
@@ -30,6 +42,59 @@ struct List {
 };
 
 static struct List g_vtables = {NULL,NULL}, g_typeinfos = {NULL,NULL};
+
+static void AppendOffset(struct List const *const p, ptrdiff_t const offset)
+{
+    struct ListOffset *plo;
+    /**/ if ( p == &g_vtables   ) plo = &g_vtables_offsets  ;
+    else if ( p == &g_typeinfos ) plo = &g_typeinfos_offsets;
+    else abortwhy("Dodgy pointer given to AppendOffset");
+
+    if ( NULL == plo->head )
+    {
+        plo->head = plo->tail = malloc( sizeof(struct NodeOffset) );
+        if ( NULL == plo->head ) abortwhy("Failed to allocate head Offset node");
+        plo->head->next = NULL;
+        memset(plo->head->offsets, 0, sizeof plo->head->offsets);
+        plo->head->count = 0u;
+    }
+
+    if ( plo->tail->count < (sizeof plo->tail->offsets / sizeof *plo->tail->offsets) )
+    {
+        plo->tail->offsets[ plo->tail->count++ ] = offset;
+        return;
+    }
+
+    struct NodeOffset *const mynewnode = malloc( sizeof(struct NodeOffset) );
+    if ( NULL == mynewnode ) abortwhy("Failed to allocate next Offset node");
+    mynewnode->next = NULL;
+    memset(mynewnode->offsets, 0, sizeof mynewnode->offsets);
+    mynewnode->offsets[0u] = offset;
+    mynewnode->count = 1u;
+    plo->tail->next = mynewnode;
+    plo->tail = mynewnode;
+}
+
+static ptrdiff_t GetOffset(struct List const *const p, size_t const index)
+{
+    struct ListOffset *plo;
+    /**/ if ( p == &g_vtables   ) plo = &g_vtables_offsets  ;
+    else if ( p == &g_typeinfos ) plo = &g_typeinfos_offsets;
+    else abortwhy("Dodgy pointer given to AppendOffset");
+
+    size_t n = index / (sizeof plo->tail->offsets / sizeof *plo->tail->offsets),
+           m = index % (sizeof plo->tail->offsets / sizeof *plo->tail->offsets);
+
+    struct NodeOffset const *pno = plo->head;
+
+    while ( n-- )
+    {
+        pno = pno->next;
+        if ( NULL == pno ) abortwhy("Invalid index given to GetOffset");
+    }
+
+    return pno->offsets[m];
+}
 
 static void Increment_Past_Null(char const **const pp)
 {
@@ -48,11 +113,14 @@ static struct Node *NewNode(char const *const arg)
    return p;
 }
 
-static void List_append(struct List *const ll, char const *const arg)
+static void List_append(struct List *const ll, char const *const arg, size_t const offset)
 {
    if ( NULL==ll || NULL==arg ) return;
    size_t const arglen = strlen(arg);
    if ( (0u == arglen) || (arglen >= BUFSIZNODE) ) return;
+
+   AppendOffset(ll,offset);
+
    if ( NULL == ll->head )
    {
        printf("--- Creating the head\n");
@@ -85,29 +153,34 @@ static void List_append(struct List *const ll, char const *const arg)
    ll->tail = newtail;
 }
 
-static int List_find(struct List const *const ll, char const *const arg)
+static size_t List_find(struct List const *const ll, char const *const arg)
 {
    if ( NULL==ll || NULL==arg ) return 0;
 
+   size_t index = 0u;
    for ( struct Node const *n = ll->head; NULL != n; n = n->next )
    {
        for ( char const *p = n->buf; TERM != *p; Increment_Past_Null(&p) )
        {
-           if ( 0 == strcmp(p,arg) ) return 1;
+           if ( 0 == strcmp(p,arg) ) return index;
+           ++index;
        }
    }
 
-   return 0;
+   return -1;
 }
 
-int Polymorphism_Process_Symbol(char const *const arg)
+int Polymorphism_Process_Symbol(char const *const arg, size_t const offset)
 {
     if ( NULL == arg ) return 0;
 
+    if ( strstr(arg, "Base"   ) ) printf("\n======= BASE    : %s - %zu ========\n", arg, offset);
+    if ( strstr(arg, "Derived") ) printf("\n======= DERIVED : %s - %zu ========\n", arg, offset);
+
     if ( strlen(arg) < 6u ) return 0;
 
-    /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) List_append( &g_vtables  , arg + 4u );
-    else if ( 0 == strncmp("_ZTI", arg, 4u) ) List_append( &g_typeinfos, arg + 4u );
+    /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) List_append( &g_vtables  , arg + 4u, offset );
+    else if ( 0 == strncmp("_ZTI", arg, 4u) ) List_append( &g_typeinfos, arg + 4u, offset );
     else return 0;
 
     return 1;
@@ -123,12 +196,16 @@ void Polymorphism_Print_Summary(void)
       return;
    }
 
+   size_t index_offsets_vtables = -1;
+
    for ( struct Node const *n = g_vtables.head; NULL != n; n = n->next )
    {
       char const *p = n->buf;
       for ( ; TERM != *p; Increment_Past_Null(&p) )
       {
-          if ( 0 == List_find(&g_typeinfos,p) ) continue;
+          ++index_offsets_vtables;
+          size_t const index_offsets_typeinfos = List_find(&g_typeinfos,p);
+          if ( (size_t)-1 == index_offsets_typeinfos ) continue;
           printf("_Z%s", p);
 #if 0  // This code is crashing -- don't know why
           char *const tmp = malloc( strlen(p) + 2u );
@@ -154,7 +231,11 @@ void Polymorphism_Print_Summary(void)
           free(tmp);
           //printf(" - tmp freed - ");
 #endif
-          printf(", hash_code = %zu\n", hash_code_from_typeinfo_name(p));
+          printf(", hash_code = %zu,", hash_code_from_typeinfo_name(p));
+          ptrdiff_t const pdV = GetOffset(&g_vtables  ,index_offsets_vtables  );
+          ptrdiff_t const pdT = GetOffset(&g_typeinfos,index_offsets_typeinfos);
+          ptrdiff_t const delta = pdV - pdT;
+          printf(", address of vtable = address of typeinfo + %td bytes\n",delta);
       }
    }
 }
