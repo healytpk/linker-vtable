@@ -174,9 +174,6 @@ int Polymorphism_Process_Symbol(char const *const arg, size_t const offset)
 {
     if ( NULL == arg ) return 0;
 
-    if ( strstr(arg, "Base"   ) ) printf("\n======= BASE    : %s - %zu ========\n", arg, offset);
-    if ( strstr(arg, "Derived") ) printf("\n======= DERIVED : %s - %zu ========\n", arg, offset);
-
     if ( strlen(arg) < 6u ) return 0;
 
     /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) List_append( &g_vtables  , arg + 4u, offset );
