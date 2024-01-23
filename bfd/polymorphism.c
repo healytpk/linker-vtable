@@ -6,6 +6,7 @@
 #include <stdio.h>                              // printf
 
 extern char *cplus_demangle_v3 (const char *mangled, int options);   // defined in libiberty/cp-demangle.c
+extern void *xmalloc(size_t);
 
 static void abortwhy(char const *const p)
 {
@@ -193,6 +194,8 @@ void Polymorphism_Print_Summary(void)
       return;
    }
 
+   printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
+
    size_t index_offsets_vtables = -1;
 
    for ( struct Node const *n = g_vtables.head; NULL != n; n = n->next )
@@ -203,16 +206,10 @@ void Polymorphism_Print_Summary(void)
           ++index_offsets_vtables;
           size_t const index_offsets_typeinfos = List_find(&g_typeinfos,p);
           if ( (size_t)-1 == index_offsets_typeinfos ) continue;
-          printf("_Z%s", p);
-#if 0  // This code is crashing -- don't know why
-          char *const tmp = malloc( strlen(p) + 2u );
-          if ( NULL == tmp )
-          {
-              printf("OUT OF MEMORY\n");
-              return;
-          }
+          char *const tmp = xmalloc( strlen(p) + 2u );
           tmp[0u] = '_'; tmp[1u] = 'Z'; tmp[2u] = '\0';
           strcpy(tmp + 2u, p);
+#if 0  // This code is crashing -- don't know why
           char *const demangled = cplus_demangle_v3(tmp,0); //DMGL_PARAMS | DMGL_ANSI | DMGL_VERBOSE);
           if ( NULL != demangled )
           {
@@ -225,16 +222,16 @@ void Polymorphism_Print_Summary(void)
               }
           }
           //printf(" - about to free tmp - ");
-          free(tmp);
+
           //printf(" - tmp freed - ");
 #endif
-          printf(", hash_code = %zu,", hash_code_from_typeinfo_name(p));
-          ptrdiff_t const pdV = GetOffset(&g_vtables  ,index_offsets_vtables  );
-          ptrdiff_t const pdT = GetOffset(&g_typeinfos,index_offsets_typeinfos);
-          ptrdiff_t const delta = pdV - pdT;
-          printf(", address of vtable = address of typeinfo + %td bytes\n",delta);
+          free(tmp);
+          printf("    { %*zu, ", 20, hash_code_from_typeinfo_name(p));
+          size_t const pdV = GetOffset(&g_vtables  ,index_offsets_vtables  );
+          printf(" %*td },   // %s\n", 8, pdV, p);
       }
    }
+   puts("};");
 }
 
 static size_t hash_code_from_typeinfo_name(char const *const buf)
