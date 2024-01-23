@@ -247,6 +247,27 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
   (*default_bfd_error_handler) (fmt, ap);
 }
 
+static void Polymorphism_CreateMap(struct bfd *const pbfd)
+{
+    long number_of_symbols = 0;
+    long const storage_needed = bfd_get_symtab_upper_bound(pbfd);
+    if ( storage_needed <= 0 ) return;
+    asymbol **const symbol_table = xmalloc(storage_needed);
+    number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
+    if ( number_of_symbols <= 0 ) goto End;
+    for ( long i = 0; i < number_of_symbols; ++i )
+    {
+        char const *const name = symbol_table[i]->name;
+        size_t const offset = symbol_table[i]->value;
+        Polymorphism_Process_Symbol(name,offset);
+        // The section can be gotten from:
+        //   symbol_table[i]->section->name;
+        // (for example: ".data.rel.ro")
+    }
+End:
+    free(symbol_table);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -526,8 +547,10 @@ main (int argc, char **argv)
     }
   link_info.output_bfd->flags
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
-
+  // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
   ldwrite ();
+
+  Polymorphism_CreateMap(link_info.output_bfd);
 
   if (config.map_file != NULL)
     lang_map ();
@@ -550,36 +573,6 @@ main (int argc, char **argv)
 
   if (config.dependency_file != NULL)
     write_dependency_file ();
-
-//======================================================================
-//======================================================================
-//========== BEGIN: Code for polymorphism ==============================
-  {
-    asymbol **symbol_table = NULL;
-    do
-    {
-      long number_of_symbols = 0;
-      bfd *const abfd = link_info.output_bfd;
-      long const storage_needed = bfd_get_symtab_upper_bound(abfd);
-      if ( storage_needed <= 0 ) break;
-      symbol_table = xmalloc(storage_needed);
-      number_of_symbols = bfd_canonicalize_symtab(abfd, symbol_table);
-      if ( number_of_symbols < 0 ) break;
-      for ( long i = 0; i < number_of_symbols; ++i )
-      {
-        char const *const name = symbol_table[i]->name;
-        size_t const offset = symbol_table[i]->value;
-        Polymorphism_Process_Symbol(name,offset);
-        // The section can be gotten from:
-        //   symbol_table[i]->section->name;
-        // (for example: ".data.rel.ro")
-      }
-    } while (0);
-    free(symbol_table);
-  }
-//========== END : Code for polymorphism ===============================
-//======================================================================
-//======================================================================
 
   /* Even if we're producing relocatable output, some non-fatal errors should
      be reported in the exit status.  (What non-fatal errors, if any, do we
