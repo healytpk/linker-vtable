@@ -18,6 +18,14 @@ static void abortwhy(char const *const p)
 #define BUFSIZNODE (BYTES_PER_ALLOC - sizeof(void*) - 1u)
 #define TERM ('\r')
 
+struct MappingTypeinfoVtable {
+    size_t hashcode_typeinfo;
+    size_t offset_vtable;
+};
+
+static struct MappingTypeinfoVtable *g_polymap = NULL;
+static size_t g_polymap_size = 0u;
+
 struct NodeOffset {
    void *next;
    size_t count;
@@ -186,7 +194,7 @@ int Polymorphism_Process_Symbol(char const *const arg, size_t const offset)
 
 static size_t hash_code_from_typeinfo_name(char const *const buf);  /* defined lower down in this file */
 
-void Polymorphism_Print_Summary(void)
+static void Polymorphism_Populate_Map_Numbers(void)
 {
    if ( NULL == g_vtables.head )
    {
@@ -196,6 +204,7 @@ void Polymorphism_Print_Summary(void)
 
    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
 
+   size_t index = -1;
    size_t index_offsets_vtables = -1;
 
    for ( struct Node const *n = g_vtables.head; NULL != n; n = n->next )
@@ -206,6 +215,11 @@ void Polymorphism_Print_Summary(void)
           ++index_offsets_vtables;
           size_t const index_offsets_typeinfos = List_find(&g_typeinfos,p);
           if ( (size_t)-1 == index_offsets_typeinfos ) continue;
+
+          ++index;
+          g_polymap[index].hashcode_typeinfo = hash_code_from_typeinfo_name(p);
+          g_polymap[index].offset_vtable     = GetOffset(&g_vtables, index_offsets_vtables);
+
           char *const tmp = xmalloc( strlen(p) + 2u );
           tmp[0u] = '_'; tmp[1u] = 'Z'; tmp[2u] = '\0';
           strcpy(tmp + 2u, p);
@@ -225,10 +239,8 @@ void Polymorphism_Print_Summary(void)
 
           //printf(" - tmp freed - ");
 #endif
+          printf("    { %*zu, %*td },  // %s\n", 20, g_polymap[index].hashcode_typeinfo, 20, g_polymap[index].offset_vtable, tmp);
           free(tmp);
-          printf("    { %*zu, ", 20, hash_code_from_typeinfo_name(p));
-          size_t const pdV = GetOffset(&g_vtables  ,index_offsets_vtables  );
-          printf(" %*td },   // %s\n", 8, pdV, p);
       }
    }
    puts("};");
@@ -264,4 +276,35 @@ static size_t hash_code_from_typeinfo_name(char const *const buf)
     hash = (hash ^ (hash >> 47U)) * mul;
     hash = (hash ^ (hash >> 47U));
     return hash;
+}
+
+static size_t Polymorphism_Match_Pairs(void)
+{
+   size_t count = 0u;
+
+   for ( struct Node const *n = g_vtables.head; NULL != n; n = n->next )
+   {
+      char const *p = n->buf;
+      for ( ; TERM != *p; Increment_Past_Null(&p) )
+      {
+          if ( (size_t)-1 != List_find(&g_typeinfos,p) ) ++count;
+      }
+   }
+
+   return count;
+}
+
+size_t Polymorphism_Finalise_Symbols_And_Create_Map(void const **const pp)
+{
+    *pp = NULL;
+    g_polymap_size = Polymorphism_Match_Pairs();
+    if ( 0u == g_polymap_size ) return 0u;
+    size_t const size_in_bytes = g_polymap_size * sizeof(struct MappingTypeinfoVtable);
+    g_polymap = malloc(size_in_bytes);
+    if ( NULL == g_polymap ) return 0u;
+
+    Polymorphism_Populate_Map_Numbers();
+
+    *pp = g_polymap;
+    return size_in_bytes;
 }

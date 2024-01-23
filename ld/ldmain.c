@@ -247,14 +247,12 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
   (*default_bfd_error_handler) (fmt, ap);
 }
 
-static void Polymorphism_CreateMap(struct bfd *const pbfd)
+static void ThisFile_Polymorphism_Submit_All_Symbols(struct bfd *const pbfd)
 {
-    long number_of_symbols = 0;
     long const storage_needed = bfd_get_symtab_upper_bound(pbfd);
     if ( storage_needed <= 0 ) return;
     asymbol **const symbol_table = xmalloc(storage_needed);
-    number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
-    if ( number_of_symbols <= 0 ) goto End;
+    long const number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
     for ( long i = 0; i < number_of_symbols; ++i )
     {
         char const *const name = symbol_table[i]->name;
@@ -264,7 +262,6 @@ static void Polymorphism_CreateMap(struct bfd *const pbfd)
         //   symbol_table[i]->section->name;
         // (for example: ".data.rel.ro")
     }
-End:
     free(symbol_table);
 }
 
@@ -549,8 +546,14 @@ main (int argc, char **argv)
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
   // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
   ldwrite ();
-
-  Polymorphism_CreateMap(link_info.output_bfd);
+  //===========================================================================
+  //=================== Beginning of Polymorphism
+  ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);
+  void const *pmap = NULL;
+  size_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
+  printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
+  //=================== End of Polymorphism
+  //===========================================================================
 
   if (config.map_file != NULL)
     lang_map ();
@@ -653,7 +656,6 @@ main (int argc, char **argv)
   /* Prevent ld_cleanup from deleting the output file.  */
   output_filename = NULL;
 
-  Polymorphism_Print_Summary();
   xexit (0);
   return 0;
 }
