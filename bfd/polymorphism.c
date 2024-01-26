@@ -1,6 +1,7 @@
 #include "polymorphism.h"
 #include <assert.h>                             // assert
 #include <stddef.h>                             // NULL, size_t
+#include <stdint.h>                             // uint32_t
 #include <stdlib.h>                             // abort, rand, srand, qsort
 #include <string.h>                             // memcmp, strcmp, strlen
 #include <stdio.h>                              // printf
@@ -20,7 +21,7 @@ static void abortwhy(char const *const p)
 
 char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const *const extra)
 {
-    char **new_argv = xmalloc( (argc+2u) * sizeof *new_argv );
+    char **const new_argv = xmalloc( (argc+2u) * sizeof *new_argv );
     for ( int i = 0u; i < argc; ++i ) new_argv[i] = argv[i];
     new_argv[argc + 0u] = (char*)extra;
     new_argv[argc + 1u] = NULL;
@@ -28,17 +29,16 @@ char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const *const 
 }
 
 struct MappingTypeinfoVtable {
-    size_t offset_typeinfo;
-    size_t offset_vtable;
+    uint32_t offset_typeinfo, offset_vtable;
 };
 
 static struct MappingTypeinfoVtable *g_polymap = NULL;
-static size_t g_polymap_size = 0u;
+static uint32_t g_polymap_size = 0u;
 
 struct ListSymbolNode {
     struct ListSymbolNode *next;
     char *name;
-    size_t offset;
+    uint32_t offset;
 };
 
 struct ListSymbol {
@@ -99,9 +99,9 @@ static int ListSymbol_revise(struct ListSymbol *const ls, char const *const arg,
     return 1;
 }
 
-static size_t Count_Pairs(void)
+static uint32_t Count_Pairs(void)
 {
-    size_t count = 0u;
+    uint32_t count = 0u;
 
     for ( struct ListSymbolNode const *n = g_vtables.head; NULL != n; n = n->next )
     {
@@ -124,7 +124,7 @@ int Polymorphism_Process_Symbol_1st_Run(char const *const arg)
     return 1;
 }
 
-int Polymorphism_Process_Symbol_2nd_Run(char const *const arg, size_t const offset)
+int Polymorphism_Process_Symbol_2nd_Run(char const *const arg, uint32_t const offset)
 {
     if ( NULL == arg ) return 0;
 
@@ -139,7 +139,7 @@ int Polymorphism_Process_Symbol_2nd_Run(char const *const arg, size_t const offs
 
 static void Polymorphism_Populate_Map_Numbers(void)
 {
-    size_t index = -1;
+    uint32_t index = -1;
 
     //printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
     for ( struct ListSymbolNode const *nv = g_vtables.head; NULL != nv; nv = nv->next )
@@ -170,7 +170,7 @@ static int compare(void const *const va, void const *const vb)
     return (a->offset_typeinfo < b->offset_typeinfo) ? -1 : +1;
 }
 
-size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
+uint32_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
 {
     *pp = NULL;
     g_polymap_size = Count_Pairs();
@@ -235,7 +235,7 @@ char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned mu
 #else
     size_t const len = strlen(g_extra_object_file);
     if ( 'o' == g_extra_object_file[len - 1u] ) return g_extra_object_file;
-    char *p = g_extra_object_file + len;
+    char *const p = g_extra_object_file + len;
     static char const digits[] = "0123456789abcdef";
     char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
     for( unsigned i = 0u; i < 16u; ++i )
@@ -254,8 +254,8 @@ char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned mu
 
 char const *Polymorphism_Create_Extra_Object_File(void)
 {
-    size_t const count = Count_Pairs();
-    size_t const count_bytes = count * sizeof(struct MappingTypeinfoVtable);
+    uint32_t const count = Count_Pairs();
+    uint32_t const count_bytes = count * sizeof(struct MappingTypeinfoVtable);
 
     Polymorphism_Get_Name_Extra_Object_File();  // in case it wasn't already called
     char *const pdot = g_extra_object_file + strlen(g_extra_object_file) - 2u;
@@ -266,14 +266,10 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     if ( NULL == f ) abort();
 
     fprintf(f,
-            "#include <stddef.h>\n"
-            "extern size_t const __map_typeinfo_vtable_size;\n"
-            "size_t const __map_typeinfo_vtable_size = %zu;\n"
-            "extern char const __map_typeinfo_vtable[%zu];\n"
-            "char const __map_typeinfo_vtable[%zu] = {\n  ",
-            count_bytes,
-            count_bytes,
-            count_bytes);
+            "extern char const __map_typeinfo_vtable[4u + 4u + %luu];\n"
+            "       char const __map_typeinfo_vtable[4u + 4u + %luu] = {\n  ",
+            (long unsigned)count_bytes,
+            (long unsigned)count_bytes);
 
     char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
     for ( unsigned i = 0u; i < 16u; ++i )
@@ -283,7 +279,7 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     fprintf(f, "  /* These first 16 bytes are the random 128-Bit number */\n  ");
 
     char unsigned val = 0u;
-    for ( size_t i = 0u; i < (count_bytes - 16u); ++i )
+    for ( size_t i = 0u; i < (count_bytes + 4u + 4u - 16u); ++i )
     {
         fprintf(f, "0x%02x, ", (unsigned)val++);
         if ( 0u == (val % 16u) ) fprintf(f, "\n  ");
