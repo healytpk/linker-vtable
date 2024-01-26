@@ -141,7 +141,7 @@ static void Polymorphism_Populate_Map_Numbers(void)
 {
     size_t index = -1;
 
-    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
+    //printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
     for ( struct ListSymbolNode const *nv = g_vtables.head; NULL != nv; nv = nv->next )
     {
         struct ListSymbolNode const *const ni = ListSymbol_find(&g_typeinfos,nv->name);
@@ -149,9 +149,9 @@ static void Polymorphism_Populate_Map_Numbers(void)
         ++index;
         g_polymap[index].offset_typeinfo = ni->offset;
         g_polymap[index].offset_vtable   = nv->offset;
-        printf("  { %*zu, %*td },  // _Z%s\n", 20, g_polymap[index].offset_typeinfo, 20, g_polymap[index].offset_vtable, nv->name);
+        //printf("  { %*zu, %*td },  // _Z%s\n", 20, g_polymap[index].offset_typeinfo, 20, g_polymap[index].offset_vtable, nv->name);
     }
-    puts("};");
+    //puts("};");
 }
 
 static int compare(void const *const va, void const *const vb)
@@ -190,12 +190,14 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
         }
     }
 
+    /*
     printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
     for ( size_t i = 0u; i < g_polymap_size; ++i )
     {
         printf("  { %*zu, %*td },\n", 20, g_polymap[i].offset_typeinfo, 20, g_polymap[i].offset_vtable);
     }
     puts("};");
+    */
 
     // ========================================== Begin freeing memory
     for ( struct ListSymbol *ls = &g_vtables; ; ls = &g_typeinfos )
@@ -216,51 +218,62 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     return size_in_bytes;
 }
 
-static void gen_uuid(char *const buf)
+char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned must end with ".c.o"
 {
+#if 0
+    strcpy(g_extra_object_file,"/tmp/monkey.c.o");
+#else
+    size_t const len = strlen(g_extra_object_file);
+    if ( 'o' == g_extra_object_file[len - 1u] ) return g_extra_object_file;
     static char const digits[] = "0123456789abcdef";
     srand(time(0));
-    for( unsigned i = 0u; i < 32u; ++i ) buf[i] = digits[ rand() % 16u ];
-    buf[32u] = '\0';
-}
-
-char const *Polymorphism_Get_Name_Extra_Object_File(void)
-{
-    if ( 'o' == g_extra_object_file[strlen(g_extra_object_file) - 1u] ) return g_extra_object_file;
-    gen_uuid( g_extra_object_file + strlen(g_extra_object_file) );
+    char *p = g_extra_object_file + len;
+    for( unsigned i = 0u; i < 32u; ++i ) p[i] = digits[ rand() % 16u ];
+    p[32u] = '\0';
     strcat( g_extra_object_file, ".c.o" );
+#endif
+    FILE *const f = fopen(g_extra_object_file, "w");
+    if ( NULL == f ) return NULL;
+    fclose(f);
     return g_extra_object_file;
 }
 
 char const *Polymorphism_Create_Extra_Object_File(void)
 {
     size_t const count = Count_Pairs();
-    if ( 0u == count ) return NULL;
     size_t const count_bytes = count * sizeof(struct MappingTypeinfoVtable);
 
-    g_extra_object_file[ strlen(g_extra_object_file) - 2u ] = '\0';
+    Polymorphism_Get_Name_Extra_Object_File();  // in case it wasn't already called
+    char *const pdot = g_extra_object_file + strlen(g_extra_object_file) - 2u;
+
+    *pdot = '\0';
     FILE *const f = fopen(g_extra_object_file, "w");
-    g_extra_object_file[ strlen(g_extra_object_file) ] = '.';
+    *pdot = '.';
     if ( NULL == f ) abort();
 
     fprintf(f,
-            "#include <stddef.h>\nextern size_t const __map_typeinfo_vtable_size = %zu; extern char const __map_typeinfo_vtable[%zu] = {\n  ",
+            "#include <stddef.h>\n"
+            "extern size_t const __map_typeinfo_vtable_size;\n"
+            "size_t const __map_typeinfo_vtable_size = %zu;\n"
+            "extern char const __map_typeinfo_vtable[%zu];\n"
+            "char const __map_typeinfo_vtable[%zu] = {\n  ",
+            count_bytes,
             count_bytes,
             count_bytes);
 
     char unsigned val = 0u;
     for ( size_t i = 0u; i < count_bytes; ++i )
     {
-        fprintf(f, "0x%02X, ", (unsigned)++val);
+        fprintf(f, "0x%02x, ", (unsigned)++val);
         if ( 0u == (val % 16u) ) fprintf(f, "\n  ");
     }
     fprintf(f,"\n};\n");
     fclose(f);
 
-    char str[1024u] = "gcc -O3 -DNDEBUG -c ";
-    g_extra_object_file[ strlen(g_extra_object_file) - 2u ] = '\0';
+    char str[512u] = "gcc -s -O3 -DNDEBUG -c ";
+    *pdot = '\0';
     strcat(str, g_extra_object_file);
-    g_extra_object_file[ strlen(g_extra_object_file) ] = '.';
+    *pdot = '.';
     strcat(str, " -o ");
     strcat(str, g_extra_object_file);
     int const dummy = system(str);

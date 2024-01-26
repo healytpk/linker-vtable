@@ -42,6 +42,7 @@
 #include "hashtab.h"
 #include "elf-bfd.h"
 #include "bfdver.h"
+#include "polymorphism.h"
 
 #if BFD_SUPPORTS_PLUGINS
 #include "plugin.h"
@@ -2987,6 +2988,11 @@ load_symbols (lang_input_statement_type *entry,
 
   if (entry->flags.loaded)
     return true;
+
+  if ( NULL != entry->filename )
+  {
+    if ( 0 == strcmp(entry->filename, Polymorphism_Get_Name_Extra_Object_File()) ) Polymorphism_Create_Extra_Object_File();
+  }
 
   ldfile_open_file (entry);
 

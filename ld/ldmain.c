@@ -264,9 +264,17 @@ static void ThisFile_Polymorphism_Submit_All_Symbols(struct bfd *const pbfd)
 }
 
 int
-main (int argc, char **argv)
+main (int const intact_argc, char **const intact_argv)
 {
-  fprintf(stdout, "%s", "============== ld VTABLE =================\n");
+  char const *const extra_object_file = Polymorphism_Get_Name_Extra_Object_File();
+  if ( NULL == extra_object_file )
+  {
+      puts("Failed to create an extra object file for __map_typeinfo_vtable -- aborting.");
+      abort();
+  }
+  char **argv = Duplicate_Argv_Plus_Extra(intact_argc, intact_argv, extra_object_file);
+  int argc = intact_argc + 1u;
+
   char *emulation;
   long start_time = get_run_time ();
 
@@ -548,10 +556,10 @@ main (int argc, char **argv)
   //=================== Beginning of Polymorphism
   ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);
   void *pmap = NULL;
-  size_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
-  printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
+  size_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap); (void)map_size;
+  //printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
   free(pmap);
-  printf("pmap has been freed.\n");
+  //printf("pmap has been freed.\n");
   //=================== End of Polymorphism
   //===========================================================================
 
