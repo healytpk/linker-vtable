@@ -24,7 +24,7 @@
 #include "libbfd.h"
 #include "bfdlink.h"
 #include "genlink.h"
-#include "polymorphism.h"
+#include "polymorphism.h"    // Polymorphism_Process_Symbol_1st_Run
 
 /*
 SECTION
