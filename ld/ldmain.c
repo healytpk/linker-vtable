@@ -249,20 +249,18 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
 
 static void ThisFile_Polymorphism_Submit_All_Symbols(struct bfd *const pbfd)
 {
-    long const storage_needed = bfd_get_symtab_upper_bound(pbfd);
-    if ( storage_needed <= 0 ) return;
-    asymbol **const symbol_table = xmalloc(storage_needed);
-    long const number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
-    for ( long i = 0; i < number_of_symbols; ++i )
-    {
-        char const *const name = symbol_table[i]->name;
-        size_t const offset = symbol_table[i]->value;
-        Polymorphism_Process_Symbol(name,offset);
-        // The section can be gotten from:
-        //   symbol_table[i]->section->name;
-        // (for example: ".data.rel.ro")
-    }
-    free(symbol_table);
+  long const storage_needed = bfd_get_symtab_upper_bound(pbfd);
+  if ( storage_needed <= 0 ) return;
+  asymbol **const symbol_table = xmalloc(storage_needed);
+  long const number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
+  for ( long i = 0; i < number_of_symbols; ++i )
+  {
+    Polymorphism_Process_Symbol_2nd_Run( symbol_table[i]->name, symbol_table[i]->value );
+    // The section can also be gotten from:
+    //   symbol_table[i]->section->name;
+    // (for example: ".data.rel.ro")
+  }
+  free(symbol_table);
 }
 
 int
@@ -544,14 +542,16 @@ main (int argc, char **argv)
     }
   link_info.output_bfd->flags
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
-  // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
-  ldwrite ();
+  ldwrite (); // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
+
   //===========================================================================
   //=================== Beginning of Polymorphism
   ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);
-  void const *pmap = NULL;
+  void *pmap = NULL;
   size_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
   printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
+  free(pmap);
+  printf("pmap has been freed.\n");
   //=================== End of Polymorphism
   //===========================================================================
 
