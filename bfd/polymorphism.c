@@ -1,8 +1,8 @@
 #include "polymorphism.h"
 #include <assert.h>                             // assert
 #include <stddef.h>                             // NULL, size_t
-#include <stdlib.h>                             // abort
-#include <string.h>                             // strcmp, strlen
+#include <stdlib.h>                             // abort, qsort
+#include <string.h>                             // memcmp, strcmp, strlen
 #include <stdio.h>                              // printf
 
 extern char *cplus_demangle_v3 (const char *mangled, int options);   // defined in libiberty/cp-demangle.c
@@ -127,26 +127,35 @@ int Polymorphism_Process_Symbol_2nd_Run(char const *const arg, size_t const offs
 
 static void Polymorphism_Populate_Map_Numbers(void)
 {
-    if ( NULL == g_vtables.head )
-    {
-      puts("list of vtables is empty");
-      return;
-    }
-
-    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
-
     size_t index = -1;
 
+    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
     for ( struct ListSymbolNode const *nv = g_vtables.head; NULL != nv; nv = nv->next )
     {
-      struct ListSymbolNode const *const ni = ListSymbol_find(&g_typeinfos,nv->name);
-      if ( NULL == ni ) continue;
-      ++index;
-      g_polymap[index].offset_typeinfo = ni->offset;
-      g_polymap[index].offset_vtable   = nv->offset;
-      printf("    { %*zu, %*td },  // _Z%s\n", 20, g_polymap[index].offset_typeinfo, 20, g_polymap[index].offset_vtable, nv->name);
+        struct ListSymbolNode const *const ni = ListSymbol_find(&g_typeinfos,nv->name);
+        if ( NULL == ni ) continue;
+        ++index;
+        g_polymap[index].offset_typeinfo = ni->offset;
+        g_polymap[index].offset_vtable   = nv->offset;
+        printf("  { %*zu, %*td },  // _Z%s\n", 20, g_polymap[index].offset_typeinfo, 20, g_polymap[index].offset_vtable, nv->name);
     }
     puts("};");
+}
+
+static int compare(void const *const va, void const *const vb)
+{  
+    struct MappingTypeinfoVtable const *const a = va,
+                                       *const b = vb;
+
+    if ( (0u==a->offset_typeinfo && 0u==a->offset_vtable) && (0u==b->offset_typeinfo && 0u==b->offset_vtable) ) return 0;
+
+    if ( 0u==a->offset_typeinfo && 0u==a->offset_vtable ) return +1;
+
+    if ( 0u==b->offset_typeinfo && 0u==b->offset_vtable ) return -1;
+
+    if ( a->offset_typeinfo == b->offset_typeinfo ) abortwhy("Two typeinfos cannot have the same address");    // but vtables can
+
+    return (a->offset_typeinfo < b->offset_typeinfo) ? -1 : +1;
 }
 
 size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
@@ -158,6 +167,25 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     g_polymap = xmalloc(size_in_bytes);
     Polymorphism_Populate_Map_Numbers();
 
+    qsort(g_polymap, g_polymap_size, sizeof *g_polymap, compare);
+
+    for ( unsigned i = 0u; i < g_polymap_size; ++i )
+    {
+        if ( 0u==g_polymap[i].offset_typeinfo && 0u==g_polymap[i].offset_vtable )
+        {
+            g_polymap_size = i;
+            break;
+        }
+    }
+
+    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
+    for ( size_t i = 0u; i < g_polymap_size; ++i )
+    {
+        printf("  { %*zu, %*td },\n", 20, g_polymap[i].offset_typeinfo, 20, g_polymap[i].offset_vtable);
+    }
+    puts("};");
+
+    // ========================================== Begin freeing memory
     for ( struct ListSymbol *ls = &g_vtables; ; ls = &g_typeinfos )
     {
         for ( struct ListSymbolNode *n = ls->head; NULL != n; )
@@ -169,8 +197,8 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
         }
         if ( &g_typeinfos == ls ) break;
     }
-
     g_vtables.head = g_vtables.tail = g_typeinfos.head = g_typeinfos.tail = NULL;
+    // ========================================== End freeing memory
 
     *pp = g_polymap;
     return size_in_bytes;
