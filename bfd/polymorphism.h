@@ -1,5 +1,6 @@
 #include <stddef.h>    // size_t
 extern char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const *const extra);
+extern char unsigned const (*Polymorphism_Get_128_Random(void))[16u];
 extern char const *Polymorphism_Get_Name_Extra_Object_File(void);
 extern int Polymorphism_Process_Symbol_1st_Run(char const*);
 extern int Polymorphism_Process_Symbol_2nd_Run(char const*, size_t);

@@ -555,6 +555,15 @@ main (int const intact_argc, char **const intact_argv)
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
   ldwrite (); // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
 
+  FILE *const f = fopen(output_filename, "rb+");
+  if ( NULL == f )
+  {
+    printf("Unable to re-open the output file to overwrite __map_typeinfo_vtable. Aborting.\n");
+    abort();
+  }
+
+  printf("================ YIPPIE ! ================\n");
+
   //===========================================================================
   //=================== Beginning of Polymorphism
   ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);

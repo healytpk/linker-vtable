@@ -218,6 +218,17 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     return size_in_bytes;
 }
 
+char unsigned const (*Polymorphism_Get_128_Random(void))[16u]
+{
+    static char unsigned buf[16u];
+    static int already_done = 0;
+    if ( already_done ) return &buf;
+    already_done = 1;
+    srand(time(0));
+    for( unsigned i = 0u; i < 16u; ++i ) buf[i] = rand() % 256u;
+    return &buf;
+}
+
 char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned must end with ".c.o"
 {
 #if 0
@@ -225,10 +236,14 @@ char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned mu
 #else
     size_t const len = strlen(g_extra_object_file);
     if ( 'o' == g_extra_object_file[len - 1u] ) return g_extra_object_file;
-    static char const digits[] = "0123456789abcdef";
-    srand(time(0));
     char *p = g_extra_object_file + len;
-    for( unsigned i = 0u; i < 32u; ++i ) p[i] = digits[ rand() % 16u ];
+    static char const digits[] = "0123456789abcdef";
+    char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
+    for( unsigned i = 0u; i < 16u; ++i )
+    {
+        p[2u*i + 0u] = digits[ 0xF & ((*mybytes)[i] >> 4u) ];
+        p[2u*i + 1u] = digits[ 0xF & ((*mybytes)[i] >> 0u) ];
+    }
     p[32u] = '\0';
     strcat( g_extra_object_file, ".c.o" );
 #endif
@@ -261,10 +276,17 @@ char const *Polymorphism_Create_Extra_Object_File(void)
             count_bytes,
             count_bytes);
 
-    char unsigned val = 0u;
-    for ( size_t i = 0u; i < count_bytes; ++i )
+    char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
+    for ( unsigned i = 0u; i < 16u; ++i )
     {
-        fprintf(f, "0x%02x, ", (unsigned)++val);
+        fprintf(f, "0x%02x, ", (unsigned)(*mybytes)[i]);
+    }
+    fprintf(f, "  /* These first 16 bytes are the random 128-Bit number */\n  ");
+
+    char unsigned val = 0u;
+    for ( size_t i = 0u; i < (count_bytes - 16u); ++i )
+    {
+        fprintf(f, "0x%02x, ", (unsigned)val++);
         if ( 0u == (val % 16u) ) fprintf(f, "\n  ");
     }
     fprintf(f,"\n};\n");
