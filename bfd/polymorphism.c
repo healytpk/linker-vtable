@@ -1,18 +1,30 @@
 #include "polymorphism.h"
 #include <assert.h>                             // assert
 #include <stddef.h>                             // NULL, size_t
-#include <stdlib.h>                             // abort, qsort
+#include <stdlib.h>                             // abort, rand, srand, qsort
 #include <string.h>                             // memcmp, strcmp, strlen
 #include <stdio.h>                              // printf
+#include <time.h>                               // time(0)
 
 extern char *cplus_demangle_v3 (const char *mangled, int options);   // defined in libiberty/cp-demangle.c
 extern void *xmalloc(size_t);
 extern char *xstrdup(const char*);
 
+static char g_extra_object_file[256u] = "/tmp/linker_map_typeinfo_vtable_";
+
 static void abortwhy(char const *const p)
 {
     printf("\n========== abort() called - '%s' ==========\n", p);
     abort();
+}
+
+char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const *const extra)
+{
+    char **new_argv = xmalloc( (argc+2u) * sizeof *new_argv );
+    for ( int i = 0u; i < argc; ++i ) new_argv[i] = argv[i];
+    new_argv[argc + 0u] = (char*)extra;
+    new_argv[argc + 1u] = NULL;
+    return new_argv;
 }
 
 struct MappingTypeinfoVtable {
@@ -202,6 +214,58 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
 
     *pp = g_polymap;
     return size_in_bytes;
+}
+
+static void gen_uuid(char *const buf)
+{
+    static char const digits[] = "0123456789abcdef";
+    srand(time(0));
+    for( unsigned i = 0u; i < 32u; ++i ) buf[i] = digits[ rand() % 16u ];
+    buf[32u] = '\0';
+}
+
+char const *Polymorphism_Get_Name_Extra_Object_File(void)
+{
+    if ( 'o' == g_extra_object_file[strlen(g_extra_object_file) - 1u] ) return g_extra_object_file;
+    gen_uuid( g_extra_object_file + strlen(g_extra_object_file) );
+    strcat( g_extra_object_file, ".c.o" );
+    return g_extra_object_file;
+}
+
+char const *Polymorphism_Create_Extra_Object_File(void)
+{
+    size_t const count = Count_Pairs();
+    if ( 0u == count ) return NULL;
+    size_t const count_bytes = count * sizeof(struct MappingTypeinfoVtable);
+
+    g_extra_object_file[ strlen(g_extra_object_file) - 2u ] = '\0';
+    FILE *const f = fopen(g_extra_object_file, "w");
+    g_extra_object_file[ strlen(g_extra_object_file) ] = '.';
+    if ( NULL == f ) abort();
+
+    fprintf(f,
+            "#include <stddef.h>\nextern size_t const __map_typeinfo_vtable_size = %zu; extern char const __map_typeinfo_vtable[%zu] = {\n  ",
+            count_bytes,
+            count_bytes);
+
+    char unsigned val = 0u;
+    for ( size_t i = 0u; i < count_bytes; ++i )
+    {
+        fprintf(f, "0x%02X, ", (unsigned)++val);
+        if ( 0u == (val % 16u) ) fprintf(f, "\n  ");
+    }
+    fprintf(f,"\n};\n");
+    fclose(f);
+
+    char str[1024u] = "gcc -O3 -DNDEBUG -c ";
+    g_extra_object_file[ strlen(g_extra_object_file) - 2u ] = '\0';
+    strcat(str, g_extra_object_file);
+    g_extra_object_file[ strlen(g_extra_object_file) ] = '.';
+    strcat(str, " -o ");
+    strcat(str, g_extra_object_file);
+    int const dummy = system(str);
+    (void)dummy;
+    return g_extra_object_file;
 }
 
 //================================================================================================
