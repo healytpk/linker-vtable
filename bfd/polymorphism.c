@@ -175,8 +175,7 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     *pp = NULL;
     g_polymap_size = Count_Pairs();
     if ( 0u == g_polymap_size ) return 0u;
-    size_t const size_in_bytes = g_polymap_size * sizeof(struct MappingTypeinfoVtable);
-    g_polymap = xmalloc(size_in_bytes);
+    g_polymap = xmalloc(g_polymap_size * sizeof(struct MappingTypeinfoVtable));
     Polymorphism_Populate_Map_Numbers();
 
     qsort(g_polymap, g_polymap_size, sizeof *g_polymap, compare);
@@ -215,7 +214,7 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     // ========================================== End freeing memory
 
     *pp = g_polymap;
-    return size_in_bytes;
+    return g_polymap_size * sizeof(struct MappingTypeinfoVtable);
 }
 
 char unsigned const (*Polymorphism_Get_128_Random(void))[16u]
