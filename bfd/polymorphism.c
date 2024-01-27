@@ -12,6 +12,7 @@ extern void *xmalloc(size_t);
 extern char *xstrdup(const char*);
 
 static char g_extra_object_file[256u] = "/tmp/linker_map_typeinfo_vtable_";
+uint32_t g_offset_of_map_typeinfo_vtable = -1;
 
 static void abortwhy(char const *const p)
 {
@@ -132,6 +133,11 @@ int Polymorphism_Process_Symbol_2nd_Run(char const *const arg, uint32_t const of
 
     /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) { if ( !ListSymbol_revise( &g_vtables  , arg + 4u, offset ) ) abortwhy("uknown symbol"); }
     else if ( 0 == strncmp("_ZTI", arg, 4u) ) { if ( !ListSymbol_revise( &g_typeinfos, arg + 4u, offset ) ) abortwhy("uknown symbol"); }
+    else if ( 0 == strcmp("__map_typeinfo_vtable", arg) )
+    {
+        g_offset_of_map_typeinfo_vtable = offset;
+        return 0;  // yes this is correct
+    }
     else return 0;
 
     return 1;
@@ -266,7 +272,7 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     if ( NULL == f ) abort();
 
     fprintf(f,
-            "extern char const __map_typeinfo_vtable[4u + 4u + %luu];\n"
+            "extern char const __map_typeinfo_vtable[4u + 4u + %luu] __attribute__((section(\".data.rel.ro\")));\n"
             "       char const __map_typeinfo_vtable[4u + 4u + %luu] = {\n  ",
             (long unsigned)count_bytes,
             (long unsigned)count_bytes);
@@ -278,8 +284,12 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     }
     fprintf(f, "  /* These first 16 bytes are the random 128-Bit number */\n  ");
 
+    size_t remaining = count_bytes;
+    if ( count_bytes >= 8 ) remaining -= 8;
+                       else remaining  = 0;
+
     char unsigned val = 0u;
-    for ( size_t i = 0u; i < (count_bytes + 4u + 4u - 16u); ++i )
+    for ( size_t i = 0u; i < remaining; ++i )
     {
         fprintf(f, "0x%02x, ", (unsigned)val++);
         if ( 0u == (val % 16u) ) fprintf(f, "\n  ");

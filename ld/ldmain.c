@@ -255,7 +255,7 @@ static void ThisFile_Polymorphism_Submit_All_Symbols(struct bfd *const pbfd)
   long const number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
   for ( long i = 0; i < number_of_symbols; ++i )
   {
-    Polymorphism_Process_Symbol_2nd_Run( symbol_table[i]->name, symbol_table[i]->value );
+    Polymorphism_Process_Symbol_2nd_Run( symbol_table[i]->name, symbol_table[i]->value );  // might be '__map_typeinfo_vtable'
     // The section can also be gotten from:
     //   symbol_table[i]->section->name;
     // (for example: ".data.rel.ro")
@@ -595,17 +595,24 @@ main (int const intact_argc, char **const intact_argv)
     }
   }
 
-  if ( ! found ) { printf("Couldn't find random number in binary output file. Aborting\n"); abort(); }
+  if ( ! found ) { printf("Couldn't find 128-Bit random number in binary output file. Aborting\n"); abort(); }
 
   fseek(f,pos,SEEK_SET);
 
   //===========================================================================
   //=================== Beginning of Polymorphism
   ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);
+  if ( (uint32_t)-1 == g_offset_of_map_typeinfo_vtable )
+  {
+    puts("Unable to determine offset of __map_typeinfo_vtable in output file. Aborting.");
+    abort();
+  }
   void *pmap = NULL;
-  size_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
-  (void)map_size;
-  fwrite(pmap, 1, map_size, f);
+  uint32_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
+  fwrite(&map_size                       , 1, 4, f);   // write the size of the map (in bytes)
+  fwrite(&g_offset_of_map_typeinfo_vtable, 1, 4, f);   // write the offset of __map_typeinfo_vtable
+  printf("Map Size: %lu\n", (long unsigned)map_size);
+  if ( 0u != map_size ) fwrite(pmap, 1, map_size, f);
   //printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
   free(pmap);
   //printf("pmap has been freed.\n");
