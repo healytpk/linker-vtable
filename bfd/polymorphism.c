@@ -229,8 +229,8 @@ char unsigned const (*Polymorphism_Get_128_Random(void))[16u]
     static int already_done = 0;
     if ( already_done ) return &buf;
     already_done = 1;
-    srand(time(0));
-    for( unsigned i = 0u; i < 16u; ++i ) buf[i] = rand() % 256u;
+    extern ssize_t getrandom(void *buffer, size_t length, unsigned int flags);
+    getrandom(buf, 16u, /*GRND_RANDOM*/ 2u);
     return &buf;
 }
 
