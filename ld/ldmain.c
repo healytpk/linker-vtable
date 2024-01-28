@@ -561,43 +561,8 @@ main (int const intact_argc, char **const intact_argv)
     printf("Unable to re-open the output file to overwrite __map_typeinfo_vtable. Aborting.\n");
     abort();
   }
-  char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
-  for ( unsigned i = 0u; i < 16u; ++i ) printf("%02x", (unsigned)(*mybytes)[i] );
-  size_t pos = 0u;
-  unsigned curSearch = 0u;
-  int found = 0;
-  while ( ! found )
-  {
-    int const c_int = fgetc(f);
-    if ( EOF == c_int ) break;
-    char unsigned const c = c_int;
-    ++pos;
-    while ( ! found )
-    {
-      if ( c == (*mybytes)[curSearch++] )
-      {
-        if ( curSearch >= 16u )
-        {
-          found = 1;
-          pos -= 16u;
-        }
-        break;
-      }
-      else
-      {
-        if ( curSearch >= 1u )
-        {
-          curSearch = 0;
-          break;
-        }
-        curSearch = 0;
-      }
-    }
-  }
 
-  if ( ! found ) { printf("Couldn't find 128-Bit random number in binary output file. Aborting\n"); abort(); }
-
-  fseek(f,pos,SEEK_SET);
+  if ( ! Polymorphism_Seek_To_UUID_In_File(f) ) { printf("Couldn't find 128-Bit random number in binary output file. Aborting\n"); abort(); }
 
   //===========================================================================
   //=================== Beginning of Polymorphism

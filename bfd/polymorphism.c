@@ -308,6 +308,39 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     return g_extra_object_file;
 }
 
+extern int Polymorphism_Seek_To_UUID_In_File(FILE *const f)
+{
+  char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
+  //for ( unsigned i = 0u; i < 16u; ++i ) printf("%02x", (unsigned)(*mybytes)[i] );
+  unsigned curSearch = 0u;
+  for (; /* ever */ ;)
+  {
+    int const c = fgetc(f);
+    // On the next line, the static_assert is to make sure that EOF is
+    // not within the range of 0 - UCHAR_MAX.
+    static_assert( sizeof(int) > sizeof(char) );
+    if ( EOF == c ) return 0;
+    for (; /* ever */ ;)
+    {
+      if ( (char unsigned)c == (*mybytes)[curSearch++] )
+      {
+        if ( curSearch >= 16u )
+        {
+          fseek(f,-16,SEEK_CUR);
+          return 1;
+        }
+        break;
+      }
+      else
+      {
+        unsigned const tmp = curSearch;
+        curSearch = 0;
+        if ( tmp >= 1u )  break;
+      }
+    }
+  }
+}
+
 //================================================================================================
 //================================================================================================
 //================================================================================================
