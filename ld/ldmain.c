@@ -269,8 +269,8 @@ main (int const intact_argc, char **const intact_argv)
   char const *const extra_object_file = Polymorphism_Get_Name_Extra_Object_File();
   if ( NULL == extra_object_file )
   {
-      puts("Failed to create an extra object file for __map_typeinfo_vtable -- aborting.");
-      abort();
+    puts("Failed to create an extra object file for __map_typeinfo_vtable -- aborting.");
+    abort();
   }
   char **argv = Duplicate_Argv_Plus_Extra(intact_argc, intact_argv, extra_object_file);
   int argc = intact_argc + 1u;
@@ -574,8 +574,8 @@ main (int const intact_argc, char **const intact_argv)
   }
   void *pmap = NULL;
   uint32_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
-  fwrite(&map_size                       , 1, 4, f);   // write the size of the map (in bytes)
-  fwrite(&g_offset_of_map_typeinfo_vtable, 1, 4, f);   // write the offset of __map_typeinfo_vtable
+  fwrite(&map_size                       , 1, sizeof(uint32_t), f);   // write the size of the map (in bytes)
+  fwrite(&g_offset_of_map_typeinfo_vtable, 1, sizeof(uint32_t), f);   // write the offset of __map_typeinfo_vtable
   printf("Map Size: %lu\n", (long unsigned)map_size);
   if ( 0u != map_size ) fwrite(pmap, 1, map_size, f);
   //printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
