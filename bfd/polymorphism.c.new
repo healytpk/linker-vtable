@@ -273,9 +273,8 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     if ( NULL == f ) abortwhy("fopen failed to open the extra object file");
 
     fprintf(f,
-            "#include <stdint.h>\n"
-            "extern _Alignas(long) char const __map_typeinfo_vtable[ 2ul*sizeof(uint32_t) + %luul ] __attribute__((section(\".data.rel.ro\")));\n"
-            "       _Alignas(long) char const __map_typeinfo_vtable[ 2ul*sizeof(uint32_t) + %luul ] = {\n  ",
+            "extern char const __map_typeinfo_vtable[4u + 4u + %luu] __attribute__((section(\".data.rel.ro\")));\n"
+            "       char const __map_typeinfo_vtable[4u + 4u + %luu] = {\n  ",
             (long unsigned)count_bytes,
             (long unsigned)count_bytes);
 
