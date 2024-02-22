@@ -86,7 +86,7 @@ static void ListSymbol_append(struct ListSymbol *const ls, char const *const arg
    ls->tail       = newtail;
 }
 
-bool Polymorphism_Process_Symbol_1st_Run(char const *const arg)
+bool Polymorphism_Process_Symbol(char const *const arg)
 {
     if ( NULL == arg ) return false;
 
