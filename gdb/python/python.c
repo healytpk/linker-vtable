@@ -559,7 +559,10 @@ gdbpy_parameter (PyObject *self, PyObject *args)
       GDB_PY_HANDLE_EXCEPTION (ex);
     }
 
-  if (!found)
+  if (cmd == CMD_LIST_AMBIGUOUS)
+    return PyErr_Format (PyExc_RuntimeError,
+			 _("Parameter `%s' is ambiguous."), arg);
+  else if (!found)
     return PyErr_Format (PyExc_RuntimeError,
 			 _("Could not find parameter `%s'."), arg);
 
@@ -637,6 +640,35 @@ execute_gdb_command (PyObject *self, PyObject *args, PyObject *kw)
   std::string to_string_res;
 
   scoped_restore preventer = prevent_dont_repeat ();
+
+  /* If the executed command raises an exception, we may have to
+     enable stdin and recover the GDB prompt.
+
+     Stdin should not be re-enabled if it is already blocked because,
+     for example, we are running a command in the context of a
+     synchronous execution command ("run", "continue", etc.).  Like
+     this:
+
+     User runs "continue"
+     --> command blocks the prompt
+     --> Python API is invoked, e.g.  via events
+     --> gdb.execute(C) invoked inside Python
+     --> command C raises an exception
+
+     In this case case, GDB would go back to the top "continue" command
+     and move on with its normal course of execution.  That is, it
+     would enable stdin in the way it normally does.
+
+     Similarly, if the command we are about to execute enables the
+     stdin while we are still in the context of a synchronous
+     execution command, we would be displaying the prompt too early,
+     before the surrounding command completes.
+
+     For these reasons, we keep the prompt blocked, if it already is.  */
+  bool prompt_was_blocked = (current_ui->prompt_state == PROMPT_BLOCKED);
+  scoped_restore save_prompt_state
+    = make_scoped_restore (&current_ui->keep_prompt_blocked,
+			   prompt_was_blocked);
 
   try
     {
@@ -2431,10 +2463,10 @@ message == an error message without a stack will be printed."),
 
   add_setshow_boolean_cmd ("ignore-environment", no_class,
 			   &python_ignore_environment, _("\
-Set whether the Python interpreter should ignore environment variables."), _(" \
-Show whether the Python interpreter showlist ignore environment variables."), _(" \
-When enabled GDB's Python interpreter will ignore any Python related\n	\
-flags in the environment.  This is equivalent to passing `-E' to a\n	\
+Set whether the Python interpreter should ignore environment variables."), _("\
+Show whether the Python interpreter showlist ignore environment variables."), _("\
+When enabled GDB's Python interpreter will ignore any Python related\n\
+flags in the environment.  This is equivalent to passing `-E' to a\n\
 python executable."),
 			   set_python_ignore_environment,
 			   show_python_ignore_environment,

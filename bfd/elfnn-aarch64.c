@@ -5910,11 +5910,9 @@ elfNN_aarch64_final_link_relocate (reloc_howto_type *howto,
 
     case BFD_RELOC_AARCH64_NN:
 
-      /* When generating a shared object or relocatable executable, these
-	 relocations are copied into the output file to be resolved at
-	 run time.  */
-      if (((bfd_link_pic (info)
-	    || globals->root.is_relocatable_executable)
+      /* When generating a shared library or PIE, these relocations
+	 are copied into the output file to be resolved at run time.  */
+      if ((bfd_link_pic (info)
 	   && (input_section->flags & SEC_ALLOC)
 	   && (h == NULL
 	       || (ELF_ST_VISIBILITY (h->other) == STV_DEFAULT
@@ -9671,7 +9669,7 @@ elfNN_aarch64_finish_dynamic_symbol (bfd *output_bfd,
 	  || plt == NULL
 	  || gotplt == NULL
 	  || relplt == NULL)
-	return false;
+	abort ();
 
       elfNN_aarch64_create_small_pltn_entry (h, htab, output_bfd, info);
       if (!h->def_regular)
@@ -9741,7 +9739,6 @@ elfNN_aarch64_finish_dynamic_symbol (bfd *output_bfd,
 	{
 	  if (!(h->def_regular || ELF_COMMON_DEF_P (h)))
 	    return false;
-
 	  BFD_ASSERT ((h->got.offset & 1) != 0);
 	  rela.r_info = ELFNN_R_INFO (0, AARCH64_R (RELATIVE));
 	  rela.r_addend = (h->root.u.def.value

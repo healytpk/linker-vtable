@@ -25,8 +25,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* FIXME: Various die-reading functions need to be more careful with
-   reading off the end of the section.
-   E.g., load_partial_dies, read_partial_die.  */
+   reading off the end of the section.  */
 
 #include "defs.h"
 #include "dwarf2/read.h"
@@ -6892,7 +6891,7 @@ dwarf2_full_name (const char *name, struct die_info *die, struct dwarf2_cu *cu)
 
 /* Construct a physname for the given DIE in CU.  NAME may either be
    from a previous call to dwarf2_name or NULL.  The result will be
-   allocated on the objfile_objstack or NULL if the DIE does not have a
+   allocated on the objfile_obstack or NULL if the DIE does not have a
    name.
 
    The output string will be canonicalized (if C++).  */
@@ -11552,15 +11551,9 @@ dwarf2_add_field (struct field_info *fip, struct die_info *die,
   const char *fieldname = "";
 
   if (die->tag == DW_TAG_inheritance)
-    {
-      fip->baseclasses.emplace_back ();
-      new_field = &fip->baseclasses.back ();
-    }
+    new_field = &fip->baseclasses.emplace_back ();
   else
-    {
-      fip->fields.emplace_back ();
-      new_field = &fip->fields.back ();
-    }
+    new_field = &fip->fields.emplace_back ();
 
   new_field->offset = die->sect_off;
 
@@ -12071,16 +12064,14 @@ dwarf2_add_member_fn (struct field_info *fip, struct die_info *die,
   /* Create a new fnfieldlist if necessary.  */
   if (flp == nullptr)
     {
-      fip->fnfieldlists.emplace_back ();
-      flp = &fip->fnfieldlists.back ();
+      flp = &fip->fnfieldlists.emplace_back ();
       flp->name = fieldname;
       i = fip->fnfieldlists.size () - 1;
     }
 
   /* Create a new member function field and add it to the vector of
      fnfieldlists.  */
-  flp->fnfields.emplace_back ();
-  fnp = &flp->fnfields.back ();
+  fnp = &flp->fnfields.emplace_back ();
 
   /* Delay processing of the physname until later.  */
   if (cu->lang () == language_cplus)
@@ -12681,10 +12672,7 @@ handle_variant_part (struct die_info *die, struct type *type,
 {
   variant_part_builder *new_part;
   if (fi->current_variant_part == nullptr)
-    {
-      fi->variant_parts.emplace_back ();
-      new_part = &fi->variant_parts.back ();
-    }
+    new_part = &fi->variant_parts.emplace_back ();
   else if (!fi->current_variant_part->processing_variant)
     {
       complaint (_("nested DW_TAG_variant_part seen "
@@ -12696,8 +12684,7 @@ handle_variant_part (struct die_info *die, struct type *type,
   else
     {
       variant_field &current = fi->current_variant_part->variants.back ();
-      current.variant_parts.emplace_back ();
-      new_part = &current.variant_parts.back ();
+      new_part = &current.variant_parts.emplace_back ();
     }
 
   /* When we recurse, we want callees to add to this new variant
@@ -12761,8 +12748,7 @@ handle_variant (struct die_info *die, struct type *type,
     = make_scoped_restore (&fi->current_variant_part->processing_variant,
 			   true);
 
-  fi->current_variant_part->variants.emplace_back ();
-  variant_field &variant = fi->current_variant_part->variants.back ();
+  variant_field &variant = fi->current_variant_part->variants.emplace_back ();
   variant.first_field = fi->fields.size ();
 
   /* In a variant we want to get the discriminant and also add a
@@ -13157,8 +13143,7 @@ update_enumeration_type_from_children (struct die_info *die,
 	    flag_enum = 0;
 	}
 
-      fields.emplace_back ();
-      struct field &field = fields.back ();
+      struct field &field = fields.emplace_back ();
       field.set_name (dwarf2_physname (name, child_die, cu));
       field.set_loc_enumval (value);
     }
@@ -15385,24 +15370,23 @@ attr_to_dynamic_prop (const struct attribute *attr, struct die_info *die,
       baton->locexpr.per_cu = cu->per_cu;
       baton->locexpr.per_objfile = per_objfile;
 
-      struct dwarf_block *block;
+      struct dwarf_block block;
       if (attr->form == DW_FORM_data16)
 	{
 	  size_t data_size = 16;
-	  block = XOBNEW (obstack, struct dwarf_block);
-	  block->size = (data_size
-			 + 2 /* Extra bytes for DW_OP and arg.  */);
-	  gdb_byte *data = XOBNEWVEC (obstack, gdb_byte, block->size);
+	  block.size = (data_size
+			+ 2 /* Extra bytes for DW_OP and arg.  */);
+	  gdb_byte *data = XOBNEWVEC (obstack, gdb_byte, block.size);
 	  data[0] = DW_OP_implicit_value;
 	  data[1] = data_size;
 	  memcpy (&data[2], attr->as_block ()->data, data_size);
-	  block->data = data;
+	  block.data = data;
 	}
       else
-	block = attr->as_block ();
+	block = *attr->as_block ();
 
-      baton->locexpr.size = block->size;
-      baton->locexpr.data = block->data;
+      baton->locexpr.size = block.size;
+      baton->locexpr.data = block.data;
       switch (attr->name)
 	{
 	case DW_AT_string_length:
@@ -21490,7 +21474,7 @@ dwarf2_find_containing_comp_unit (sect_offset sect_off,
   if (this_cu->is_dwz != offset_in_dwz || this_cu->sect_off > sect_off)
     {
       if (low == 0 || this_cu->is_dwz != offset_in_dwz)
-	error (_("Dwarf Error: could not find partial DIE containing "
+	error (_("Dwarf Error: could not find CU containing "
 	       "offset %s [in module %s]"),
 	       sect_offset_str (sect_off),
 	       bfd_get_filename (per_bfd->obfd));

@@ -2557,6 +2557,10 @@ void bfd_perror (const char *message);
 
 typedef void (*bfd_error_handler_type) (const char *, va_list);
 
+typedef int (*bfd_print_callback) (void *, const char *, ...);
+void bfd_print_error (bfd_print_callback print_func,
+    void *stream, const char *fmt, va_list ap);
+
 void _bfd_error_handler (const char *fmt, ...) ATTRIBUTE_PRINTF_1;
 
 bfd_error_handler_type bfd_set_error_handler (bfd_error_handler_type);
@@ -3894,6 +3898,12 @@ enum bfd_reloc_code_real
   BFD_RELOC_X86_64_CODE_4_GOTPCRELX,
   BFD_RELOC_X86_64_CODE_4_GOTTPOFF,
   BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC,
+  BFD_RELOC_X86_64_CODE_5_GOTPCRELX,
+  BFD_RELOC_X86_64_CODE_5_GOTTPOFF,
+  BFD_RELOC_X86_64_CODE_5_GOTPC32_TLSDESC,
+  BFD_RELOC_X86_64_CODE_6_GOTPCRELX,
+  BFD_RELOC_X86_64_CODE_6_GOTTPOFF,
+  BFD_RELOC_X86_64_CODE_6_GOTPC32_TLSDESC,
 
   /* ns32k relocations.  */
   BFD_RELOC_NS32K_IMM_8,

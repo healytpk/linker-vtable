@@ -4216,43 +4216,31 @@ remove_breakpoint (struct bp_location *bl)
   return remove_breakpoint_1 (bl, REMOVE_BREAKPOINT);
 }
 
-/* Clear the "inserted" flag in all breakpoints.  */
+/* See breakpoint.h.  */
 
 void
-mark_breakpoints_out (void)
+mark_breakpoints_out (program_space *pspace)
 {
   for (bp_location *bl : all_bp_locations ())
-    if (bl->pspace == current_program_space)
+    if (bl->pspace == pspace)
       bl->inserted = 0;
 }
 
-/* Clear the "inserted" flag in all breakpoints and delete any
-   breakpoints which should go away between runs of the program.
-
-   Plus other such housekeeping that has to be done for breakpoints
-   between runs.
-
-   Note: this function gets called at the end of a run (by
-   generic_mourn_inferior) and when a run begins (by
-   init_wait_for_inferior).  */
-
-
+/* See breakpoint.h.  */
 
 void
-breakpoint_init_inferior (enum inf_context context)
+breakpoint_init_inferior (inferior *inf, inf_context context)
 {
-  struct program_space *pspace = current_program_space;
-
   /* If breakpoint locations are shared across processes, then there's
      nothing to do.  */
-  if (gdbarch_has_global_breakpoints (current_inferior ()->arch ()))
+  if (gdbarch_has_global_breakpoints (inf->arch ()))
     return;
 
-  mark_breakpoints_out ();
+  mark_breakpoints_out (inf->pspace);
 
   for (breakpoint &b : all_breakpoints_safe ())
     {
-      if (b.has_locations () && b.first_loc ().pspace != pspace)
+      if (b.has_locations () && b.first_loc ().pspace != inf->pspace)
 	continue;
 
       switch (b.type)
@@ -5044,7 +5032,7 @@ print_solib_event (bool is_catchpoint)
       current_uiout->text (_("  Inferior loaded "));
       ui_out_emit_list list_emitter (current_uiout, "added");
       bool first = true;
-      for (shobj *iter : current_program_space->added_solibs)
+      for (solib *iter : current_program_space->added_solibs)
 	{
 	  if (!first)
 	    current_uiout->text ("    ");
@@ -7984,11 +7972,10 @@ create_and_insert_solib_event_breakpoint (struct gdbarch *gdbarch, CORE_ADDR add
   return b;
 }
 
-/* Disable any breakpoints that are on code in shared libraries.  Only
-   apply to enabled breakpoints, disabled ones can just stay disabled.  */
+/* See breakpoint.h.  */
 
 void
-disable_breakpoints_in_shlibs (void)
+disable_breakpoints_in_shlibs (program_space *pspace)
 {
   for (bp_location *loc : all_bp_locations ())
     {
@@ -8004,7 +7991,7 @@ disable_breakpoints_in_shlibs (void)
 	   || (b->type == bp_jit_event)
 	   || (b->type == bp_hardware_breakpoint)
 	   || (is_tracepoint (b)))
-	  && loc->pspace == current_program_space
+	  && loc->pspace == pspace
 	  && !loc->shlib_disabled
 	  && solib_name_from_address (loc->pspace, loc->address)
 	  )
@@ -8019,7 +8006,7 @@ disable_breakpoints_in_shlibs (void)
    disabled ones can just stay disabled.  */
 
 static void
-disable_breakpoints_in_unloaded_shlib (program_space *pspace, const shobj &solib)
+disable_breakpoints_in_unloaded_shlib (program_space *pspace, const solib &solib)
 {
   bool disabled_shlib_breaks = false;
 

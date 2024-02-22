@@ -212,7 +212,7 @@ class Server:
         # Before looping, start the thread that writes JSON to the
         # client, and the thread that reads output from the inferior.
         start_thread("output reader", self._read_inferior_output)
-        start_json_writer(self.out_stream, self.write_queue)
+        json_writer = start_json_writer(self.out_stream, self.write_queue)
         start_thread("JSON reader", self._reader_thread)
         while not self.done:
             cmd = self.read_queue.get()
@@ -229,6 +229,7 @@ class Server:
         # JSON-writing thread, so that we can ensure that all
         # responses are flushed to the client before exiting.
         self.write_queue.put(None)
+        json_writer.join()
 
     @in_dap_thread
     def send_event_later(self, event, body=None):
@@ -354,6 +355,7 @@ def request(
             cmd = _check_not_running(cmd)
 
         global _commands
+        assert name not in _commands
         _commands[name] = cmd
         return cmd
 
@@ -366,6 +368,7 @@ def capability(name, value=True):
 
     def wrap(func):
         global _capabilities
+        assert name not in _capabilities
         _capabilities[name] = value
         return func
 

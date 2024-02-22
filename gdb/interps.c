@@ -273,7 +273,6 @@ clear_interpreter_hooks (void)
   deprecated_print_frame_info_listing_hook = 0;
   /*print_frame_more_info_hook = 0; */
   deprecated_query_hook = 0;
-  deprecated_warning_hook = 0;
   deprecated_readline_begin_hook = 0;
   deprecated_readline_hook = 0;
   deprecated_readline_end_hook = 0;
@@ -488,7 +487,7 @@ interps_notify_target_resumed (ptid_t ptid)
 /* See interps.h.  */
 
 void
-interps_notify_solib_loaded (const shobj &so)
+interps_notify_solib_loaded (const solib &so)
 {
   interps_notify (&interp::on_solib_loaded, so);
 }
@@ -496,7 +495,7 @@ interps_notify_solib_loaded (const shobj &so)
 /* See interps.h.  */
 
 void
-interps_notify_solib_unloaded (const shobj &so)
+interps_notify_solib_unloaded (const solib &so)
 {
   interps_notify (&interp::on_solib_unloaded, so);
 }

@@ -917,7 +917,7 @@ enum domain_search_flag
 DEF_ENUM_FLAGS_TYPE (enum domain_search_flag, domain_search_flags);
 
 /* A convenience constant to search for any symbol.  */
-constexpr domain_search_flags SEARCH_ALL
+constexpr domain_search_flags SEARCH_ALL_DOMAINS
     = ((domain_search_flags) 0
 #define SYM_DOMAIN(X) | SEARCH_ ## X ## _DOMAIN
 #include "sym-domains.def"
@@ -958,7 +958,7 @@ search_flags_matches (domain_search_flags flags, domain_enum domain)
 
 /* The flag bit.  */
 constexpr int SCRIPTING_SEARCH_FLAG = 0x8000;
-static_assert (SCRIPTING_SEARCH_FLAG > SEARCH_ALL);
+static_assert (SCRIPTING_SEARCH_FLAG > SEARCH_ALL_DOMAINS);
 
 /* Convert a domain constant to a "scripting domain".  */
 static constexpr inline int
@@ -1114,13 +1114,13 @@ struct symbol_computed_ops
      FRAME may be zero.  */
 
   struct value *(*read_variable) (struct symbol * symbol,
-				  frame_info_ptr frame);
+				  const frame_info_ptr &frame);
 
   /* Read variable SYMBOL like read_variable at (callee) FRAME's function
      entry.  SYMBOL should be a function parameter, otherwise
      NO_ENTRY_VALUE_ERROR will be thrown.  */
   struct value *(*read_variable_at_entry) (struct symbol *symbol,
-					   frame_info_ptr frame);
+					   const frame_info_ptr &frame);
 
   /* Find the "symbol_needs_kind" value for the given symbol.  This
      value determines whether reading the symbol needs memory (e.g., a
@@ -1192,7 +1192,7 @@ struct symbol_block_ops
      computed with DW_AT_static_link and this method must be used to compute
      the corresponding DW_AT_frame_base attribute.  */
   CORE_ADDR (*get_frame_base) (struct symbol *framefunc,
-			       frame_info_ptr frame);
+			       const frame_info_ptr &frame);
 
   /* Return the block for this function.  So far, this is used to
      implement function aliases.  So, if this is set, then it's not
@@ -2350,7 +2350,7 @@ struct gnu_ifunc_fns
 
 extern const struct gnu_ifunc_fns *gnu_ifunc_fns_p;
 
-extern CORE_ADDR find_solib_trampoline_target (frame_info_ptr, CORE_ADDR);
+extern CORE_ADDR find_solib_trampoline_target (const frame_info_ptr &, CORE_ADDR);
 
 struct symtab_and_line
 {
@@ -2422,10 +2422,6 @@ extern bool find_line_pc_range (struct symtab_and_line, CORE_ADDR *,
 				CORE_ADDR *);
 
 extern void resolve_sal_pc (struct symtab_and_line *);
-
-/* solib.c */
-
-extern void clear_solib (void);
 
 /* The reason we're calling into a completion match list collector
    function.  */

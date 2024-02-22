@@ -679,7 +679,7 @@ ada_discrete_type_high_bound (struct type *type)
 	  return high.const_val ();
 	else
 	  {
-	    gdb_assert (high.kind () == PROP_UNDEFINED);
+	    gdb_assert (!high.is_available ());
 
 	    /* This happens when trying to evaluate a type's dynamic bound
 	       without a live target.  There is nothing relevant for us to
@@ -714,7 +714,7 @@ ada_discrete_type_low_bound (struct type *type)
 	  return low.const_val ();
 	else
 	  {
-	    gdb_assert (low.kind () == PROP_UNDEFINED);
+	    gdb_assert (!low.is_available ());
 
 	    /* This happens when trying to evaluate a type's dynamic bound
 	       without a live target.  There is nothing relevant for us to
@@ -11720,7 +11720,7 @@ ada_exception_support_info_sniffer (void)
    to most users.  */
 
 static int
-is_known_support_routine (frame_info_ptr frame)
+is_known_support_routine (const frame_info_ptr &frame)
 {
   enum language func_lang;
   int i;
@@ -11779,9 +11779,9 @@ is_known_support_routine (frame_info_ptr frame)
    part of the Ada run-time, starting from FI and moving upward.  */
 
 void
-ada_find_printable_frame (frame_info_ptr fi)
+ada_find_printable_frame (const frame_info_ptr &initial_fi)
 {
-  for (; fi != NULL; fi = get_prev_frame (fi))
+  for (frame_info_ptr fi = initial_fi; fi != nullptr; fi = get_prev_frame (fi))
     {
       if (!is_known_support_routine (fi))
 	{
@@ -12913,7 +12913,7 @@ ada_add_standard_exceptions (compiled_regex *preg,
 
 static void
 ada_add_exceptions_from_frame (compiled_regex *preg,
-			       frame_info_ptr frame,
+			       const frame_info_ptr &frame,
 			       std::vector<ada_exc_info> *exceptions)
 {
   const struct block *block = get_frame_block (frame, 0);
@@ -13339,7 +13339,7 @@ public:
 
   struct value *read_var_value (struct symbol *var,
 				const struct block *var_block,
-				frame_info_ptr frame) const override
+				const frame_info_ptr &frame) const override
   {
     /* The only case where default_read_var_value is not sufficient
        is when VAR is a renaming...  */
@@ -13533,7 +13533,7 @@ public:
 			     NULL,
 			     NULL,
 			     SEARCH_GLOBAL_BLOCK | SEARCH_STATIC_BLOCK,
-			     SEARCH_ALL);
+			     SEARCH_ALL_DOMAINS);
 
     /* At this point scan through the misc symbol vectors and add each
        symbol you find to the list.  Eventually we want to ignore

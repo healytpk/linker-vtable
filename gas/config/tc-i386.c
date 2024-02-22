@@ -140,6 +140,7 @@ arch_entry;
 
 static void update_code_flag (int, int);
 static void s_insn (int);
+static void s_noopt (int);
 static void set_code_flag (int);
 static void set_16bit_gcc_code_flag (int);
 static void set_intel_syntax (int);
@@ -1232,7 +1233,7 @@ const pseudo_typeS md_pseudo_table[] =
   {"value", cons, 2},
   {"slong", signed_cons, 4},
   {"insn", s_insn, 0},
-  {"noopt", s_ignore, 0},
+  {"noopt", s_noopt, 0},
   {"optim", s_ignore, 0},
   {"code16gcc", set_16bit_gcc_code_flag, CODE_16BIT},
   {"code16", set_code_flag, CODE_16BIT},
@@ -3647,6 +3648,7 @@ tc_i386_fix_adjustable (fixS *fixP)
       || fixP->fx_r_type == BFD_RELOC_X86_64_DTPOFF64
       || fixP->fx_r_type == BFD_RELOC_X86_64_GOTTPOFF
       || fixP->fx_r_type == BFD_RELOC_X86_64_CODE_4_GOTTPOFF
+      || fixP->fx_r_type == BFD_RELOC_X86_64_CODE_6_GOTTPOFF
       || fixP->fx_r_type == BFD_RELOC_X86_64_TPOFF32
       || fixP->fx_r_type == BFD_RELOC_X86_64_TPOFF64
       || fixP->fx_r_type == BFD_RELOC_X86_64_GOTOFF64
@@ -4999,6 +5001,18 @@ optimize_encoding (void)
     }
 }
 
+static void
+s_noopt (int dummy ATTRIBUTE_UNUSED)
+{
+  if (!is_it_end_of_statement ())
+    as_warn (_("`.noopt' arguments ignored"));
+
+  optimize = 0;
+  optimize_for_space = 0;
+
+  ignore_rest_of_line ();
+}
+
 /* Return non-zero for load instruction.  */
 
 static int
@@ -5382,10 +5396,8 @@ ginsn_opsize_prefix_p (void)
 static unsigned int
 ginsn_dw2_regnum (const reg_entry *ireg)
 {
-  /* PS: Note the data type here as int32_t, because of Dw2Inval (-1).  */
-  int32_t dwarf_reg = Dw2Inval;
   const reg_entry *temp = ireg;
-  unsigned int idx = 0;
+  unsigned int dwarf_reg = Dw2Inval, idx = 0;
 
   /* ginsn creation is available for AMD64 abi only ATM.  Other flag_code
      are not expected.  */
@@ -5428,9 +5440,9 @@ ginsn_dw2_regnum (const reg_entry *ireg)
 
   /* Sanity check - failure may indicate state corruption, bad ginsn or
      perhaps the i386-reg table and the current function got out of sync.  */
-  gas_assert (dwarf_reg >= 0);
+  gas_assert (dwarf_reg < Dw2Inval);
 
-  return (unsigned int) dwarf_reg;
+  return dwarf_reg;
 }
 
 static ginsnS *
@@ -5453,6 +5465,9 @@ x86_ginsn_addsub_reg_mem (const symbolS *insn_end_sym)
      access are unnecessary for SCFI correctness.  TBD_GINSN_GEN_NOT_SCFI.  */
   if (i.mem_operands)
     return ginsn;
+
+  /* Skip detection of 8/16/32-bit op size; 'add/sub reg, reg/mem' ops always
+     make the dest reg untraceable for SCFI.  */
 
   /* op reg, reg/mem.  */
   src1_dw2_regnum = ginsn_dw2_regnum (i.op[0].regs);
@@ -5491,6 +5506,9 @@ x86_ginsn_addsub_mem_reg (const symbolS *insn_end_sym)
   /* op symbol, %reg.  */
   if (i.mem_operands && !i.base_reg && !i.index_reg)
     return ginsn;
+
+  /* Skip detection of 8/16/32-bit op size; 'add/sub reg/mem, reg' ops always
+     make the dest reg untraceable for SCFI.  */
 
   /* op reg/mem, %reg.  */
   dw2_regnum = ginsn_dw2_regnum (i.op[1].regs);
@@ -5572,6 +5590,11 @@ x86_ginsn_alu_imm (const symbolS *insn_end_sym)
   if (i.mem_operands == 1)
     return ginsn;
 
+  /* 8/16/32-bit op size makes the destination reg untraceable for SCFI.
+     Deal with this via the x86_ginsn_unhandled () code path.  */
+  if (i.suffix != QWORD_MNEM_SUFFIX)
+    return ginsn;
+
   gas_assert (i.imm_operands == 1);
   src_imm = i.op[0].imms->X_add_number;
   /* The second operand may be a register or indirect access.  For SCFI, only
@@ -5618,6 +5641,12 @@ x86_ginsn_move (const symbolS *insn_end_sym)
   if (i.mem_operands == 1 && !i.base_reg && !i.index_reg)
     return ginsn;
 
+  /* 8/16/32-bit op size makes the destination reg untraceable for SCFI.
+     Handle mov reg, reg only.  mov to or from a memory operand will make
+     dest reg, when present, untraceable, irrespective of the op size.  */
+  if (i.reg_operands == 2 && i.suffix != QWORD_MNEM_SUFFIX)
+    return ginsn;
+
   gas_assert (i.tm.opcode_space == SPACE_BASE);
   if (opcode == 0x8b || opcode == 0x8a)
     {
@@ -5661,8 +5690,10 @@ x86_ginsn_move (const symbolS *insn_end_sym)
 }
 
 /* Generate appropriate ginsn for lea.
-   Sub-cases marked with TBD_GINSN_INFO_LOSS indicate some loss of information
-   in the ginsn.  But these are fine for now for GINSN_GEN_SCFI generation
+
+   Unhandled sub-cases (marked with TBD_GINSN_GEN_NOT_SCFI) also suffer with
+   some loss of information in the final ginsn chosen eventually (type
+   GINSN_TYPE_OTHER).  But this is fine for now for GINSN_GEN_SCFI generation
    mode.  */
 
 static ginsnS *
@@ -5670,76 +5701,66 @@ x86_ginsn_lea (const symbolS *insn_end_sym)
 {
   offsetT src_disp = 0;
   ginsnS *ginsn = NULL;
-  unsigned int base_reg;
-  unsigned int index_reg;
+  unsigned int src1_reg;
+  const reg_entry *src1;
   offsetT index_scale;
   unsigned int dst_reg;
+  bool index_regiz_p;
 
-  if (!i.index_reg && !i.base_reg)
+  if (!i.base_reg != (!i.index_reg || i.index_reg->reg_num == RegIZ))
     {
-      /* lea symbol, %rN.  */
-      dst_reg = ginsn_dw2_regnum (i.op[1].regs);
-      /* TBD_GINSN_INFO_LOSS - Skip encoding information about the symbol.  */
-      ginsn = ginsn_new_mov (insn_end_sym, false,
-			     GINSN_SRC_IMM, 0xf /* arbitrary const.  */, 0,
-			     GINSN_DST_REG, dst_reg, 0);
-    }
-  else if (i.base_reg && !i.index_reg)
-    {
-      /* lea    -0x2(%base),%dst.  */
-      base_reg = ginsn_dw2_regnum (i.base_reg);
-      dst_reg = ginsn_dw2_regnum (i.op[1].regs);
+      /* lea disp(%base), %dst    or    lea disp(,%index,imm), %dst.
+	 Either index_reg or base_reg exists, but not both.  Further, as per
+	 above, the case when just %index exists but is equal to RegIZ is
+	 excluded.  If not excluded, a GINSN_TYPE_MOV of %rsi
+	 (GINSN_DW2_REGNUM_RSI_DUMMY) to %dst will be generated by this block.
+	 Such a mov ginsn is imprecise; so, exclude now and generate
+	 GINSN_TYPE_OTHER instead later via the x86_ginsn_unhandled ().
+	 Excluding other cases is required due to
+	 TBD_GINSN_REPRESENTATION_LIMIT.  */
 
-      if (i.disp_operands)
-	src_disp = i.op[0].disps->X_add_number;
-
-      if (src_disp)
-	/* Generate an ADD ginsn.  */
-	ginsn = ginsn_new_add (insn_end_sym, true,
-			       GINSN_SRC_REG, base_reg, 0,
-			       GINSN_SRC_IMM, 0, src_disp,
-			       GINSN_DST_REG, dst_reg, 0);
-      else
-	/* Generate a MOV ginsn.  */
-	ginsn = ginsn_new_mov (insn_end_sym, true,
-			       GINSN_SRC_REG, base_reg, 0,
-			       GINSN_DST_REG, dst_reg, 0);
-    }
-  else if (!i.base_reg && i.index_reg)
-    {
-      /* lea (,%index,imm), %dst.  */
-      /* TBD_GINSN_INFO_LOSS - There is no explicit ginsn multiply operation,
-	 instead use GINSN_TYPE_OTHER.  Also, note that info about displacement
-	 is not carried forward either.  But this is fine because
-	 GINSN_TYPE_OTHER will cause SCFI pass to bail out any which way if
-	 dest reg is interesting.  */
       index_scale = i.log2_scale_factor;
-      index_reg = ginsn_dw2_regnum (i.index_reg);
+      index_regiz_p = i.index_reg && i.index_reg->reg_num == RegIZ;
+      src1 = i.base_reg ? i.base_reg : i.index_reg;
+      src1_reg = ginsn_dw2_regnum (src1);
       dst_reg = ginsn_dw2_regnum (i.op[1].regs);
-      ginsn = ginsn_new_other (insn_end_sym, true,
-			       GINSN_SRC_REG, index_reg,
-			       GINSN_SRC_IMM, index_scale,
-			       GINSN_DST_REG, dst_reg);
-      /* FIXME - It seems to make sense to represent a scale factor of 1
-	 correctly here (i.e. not as "other", but rather similar to the
-	 base-without- index case above)?  */
-    }
-  else
-    {
-      /* lea disp(%base,%index,imm) %dst.  */
-      /* TBD_GINSN_INFO_LOSS - Skip adding information about the disp and imm
-	 for index reg.  */
-      base_reg = ginsn_dw2_regnum (i.base_reg);
-      index_reg = ginsn_dw2_regnum (i.index_reg);
-      dst_reg = ginsn_dw2_regnum (i.op[1].regs);
-      /* Generate an GINSN_TYPE_OTHER ginsn.  */
-      ginsn = ginsn_new_other (insn_end_sym, true,
-			       GINSN_SRC_REG, base_reg,
-			       GINSN_SRC_REG, index_reg,
-			       GINSN_DST_REG, dst_reg);
-    }
+      /* It makes sense to represent a scale factor of 1 precisely here
+	 (i.e., not using GINSN_TYPE_OTHER, but rather similar to the
+	 base-without-index case).  A non-zero scale factor is still OK if
+	 the index reg is zero reg.
+	 However, skip from here the case when disp has a symbol instead.
+	 TBD_GINSN_REPRESENTATION_LIMIT.  */
+      if ((!index_scale || index_regiz_p)
+	  && (!i.disp_operands || i.op[0].disps->X_op == O_constant))
+	{
+	  if (i.disp_operands)
+	    src_disp = i.op[0].disps->X_add_number;
 
-  ginsn_set_where (ginsn);
+	  if (src_disp)
+	    /* Generate an ADD ginsn.  */
+	    ginsn = ginsn_new_add (insn_end_sym, true,
+				   GINSN_SRC_REG, src1_reg, 0,
+				   GINSN_SRC_IMM, 0, src_disp,
+				   GINSN_DST_REG, dst_reg, 0);
+	  else
+	    /* Generate a MOV ginsn.  */
+	    ginsn = ginsn_new_mov (insn_end_sym, true,
+				   GINSN_SRC_REG, src1_reg, 0,
+				   GINSN_DST_REG, dst_reg, 0);
+
+	  ginsn_set_where (ginsn);
+	}
+    }
+  /* Skip handling other cases here,
+     - when (i.index_reg && i.base_reg) is true,
+       e.g., lea disp(%base,%index,imm), %dst
+       We do not have a ginsn representation for multiply.
+     - or, when (!i.index_reg && !i.base_reg) is true,
+       e.g., lea symbol, %dst
+       Not a frequent pattern.  If %dst is a register of interest, the user is
+       likely to use a MOV op anyway.
+     Deal with these via the x86_ginsn_unhandled () code path to generate
+     GINSN_TYPE_OTHER when necessary.  TBD_GINSN_GEN_NOT_SCFI.  */
 
   return ginsn;
 }
@@ -6022,6 +6043,12 @@ x86_ginsn_new (const symbolS *insn_end_sym, enum ginsn_gen_mode gmode)
 
   switch (opcode)
     {
+
+    /* Add opcodes 0x0/0x2 and sub opcodes 0x28/0x2a (with opcode_space
+       SPACE_BASE) are 8-bit ops.  While they are relevant for SCFI
+       correctness,  skip handling them here and use the x86_ginsn_unhandled
+       code path to generate GINSN_TYPE_OTHER when necessary.  */
+
     case 0x1:  /* add reg, reg/mem.  */
     case 0x29: /* sub reg, reg/mem.  */
       if (i.tm.opcode_space != SPACE_BASE)
@@ -6168,7 +6195,7 @@ x86_ginsn_new (const symbolS *insn_end_sym, enum ginsn_gen_mode gmode)
     case 0x8d:
       if (i.tm.opcode_space != SPACE_BASE)
 	break;
-      /* lea disp(%base,%index,imm) %dst.  */
+      /* lea disp(%base,%index,imm), %dst.  */
       ginsn = x86_ginsn_lea (insn_end_sym);
       break;
 
@@ -6767,10 +6794,19 @@ md_assemble (char *line)
       for (j = i.imm_operands; j < i.operands; ++j)
 	switch (i.reloc[j])
 	  {
+	  case BFD_RELOC_X86_64_GOTTPOFF:
+	    if (i.tm.mnem_off == MN_add
+		&& i.tm.opcode_space == SPACE_EVEXMAP4
+		&& i.mem_operands == 1
+		&& i.base_reg
+		&& i.base_reg->reg_num == RegIP
+		&& i.tm.operand_types[0].bitfield.class == Reg
+		&& i.tm.operand_types[2].bitfield.class == Reg)
+	      /* Allow APX: add %reg1, foo@gottpoff(%rip), %reg2.  */
+	      break;
+	    /* Fall through.  */
 	  case BFD_RELOC_386_TLS_GOTIE:
 	  case BFD_RELOC_386_TLS_LE_32:
-	  case BFD_RELOC_X86_64_GOTTPOFF:
-	  case BFD_RELOC_X86_64_CODE_4_GOTTPOFF:
 	  case BFD_RELOC_X86_64_TLSLD:
 	    as_bad (_("TLS relocation cannot be used with `%s'"), insn_name (&i.tm));
 	    return;
@@ -9459,13 +9495,31 @@ process_suffix (void)
 	  else
 	    i.tm.base_opcode |= 1;
 	}
+
+      /* Set mode64 for an operand.  */
+      if (i.suffix == QWORD_MNEM_SUFFIX)
+	{
+	  if (flag_code == CODE_64BIT
+	      && !i.tm.opcode_modifier.norex64
+	      && !i.tm.opcode_modifier.vexw
+	      /* Special case for xchg %rax,%rax.  It is NOP and doesn't
+		 need rex64. */
+	      && ! (i.operands == 2
+		    && i.tm.base_opcode == 0x90
+		    && i.tm.opcode_space == SPACE_BASE
+		    && i.types[0].bitfield.instance == Accum
+		    && i.types[1].bitfield.instance == Accum))
+	    i.rex |= REX_W;
+
+	  break;
+	}
+
     /* fall through */
     case SHORT_MNEM_SUFFIX:
       /* Now select between word & dword operations via the operand
 	 size prefix, except for instructions that will ignore this
 	 prefix anyway.  */
-      if (i.suffix != QWORD_MNEM_SUFFIX
-	  && i.tm.opcode_modifier.mnemonicsize != IGNORESIZE
+      if (i.tm.opcode_modifier.mnemonicsize != IGNORESIZE
 	  && !i.tm.opcode_modifier.floatmf
 	  && (!is_any_vex_encoding (&i.tm)
 	      || i.tm.opcode_space == SPACE_EVEXMAP4)
@@ -9488,21 +9542,6 @@ process_suffix (void)
 	  else if (!add_prefix (prefix))
 	    return 0;
 	}
-
-      /* Set mode64 for an operand.  */
-      if (i.suffix == QWORD_MNEM_SUFFIX
-	  && flag_code == CODE_64BIT
-	  && !i.tm.opcode_modifier.norex64
-	  && !i.tm.opcode_modifier.vexw
-	  /* Special case for xchg %rax,%rax.  It is NOP and doesn't
-	     need rex64. */
-	  && ! (i.operands == 2
-		&& i.tm.base_opcode == 0x90
-		&& i.tm.opcode_space == SPACE_BASE
-		&& i.types[0].bitfield.instance == Accum
-		&& i.types[0].bitfield.qword
-		&& i.types[1].bitfield.instance == Accum))
-	i.rex |= REX_W;
 
       break;
 
@@ -11772,8 +11811,14 @@ output_insn (const struct last_insn *last_insn)
 	{
 	  j = encoding_length (insn_start_frag, insn_start_off, frag_more (0));
 	  if (j > 15)
-	    as_warn (_("instruction length of %u bytes exceeds the limit of 15"),
-		     j);
+	    {
+	      if (dot_insn ())
+		as_warn (_("instruction length of %u bytes exceeds the limit of 15"),
+			j);
+	      else
+		as_bad (_("instruction length of %u bytes exceeds the limit of 15"),
+			j);
+	    }
 	  else if (fragP)
 	    {
 	      /* NB: Don't add prefix with GOTPC relocation since
@@ -12003,6 +12048,7 @@ output_disp (fragS *insn_start_frag, offsetT insn_start_off)
 		    case BFD_RELOC_X86_64_TLSLD:
 		    case BFD_RELOC_X86_64_GOTTPOFF:
 		    case BFD_RELOC_X86_64_CODE_4_GOTTPOFF:
+		    case BFD_RELOC_X86_64_CODE_6_GOTTPOFF:
 		    case BFD_RELOC_X86_64_GOTPC32_TLSDESC:
 		    case BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC:
 		    case BFD_RELOC_X86_64_TLSDESC_CALL:
@@ -12019,9 +12065,30 @@ output_disp (fragS *insn_start_frag, offsetT insn_start_off)
 		  && !i.prefix[ADDR_PREFIX])
 		fixP->fx_signed = 1;
 
-	      /* Set fx_tcbit3 for REX2 prefix.  */
-	      if (is_apx_rex2_encoding ())
-		fixP->fx_tcbit3 = 1;
+	      if (reloc_type == BFD_RELOC_X86_64_GOTTPOFF
+		  && i.tm.opcode_space == SPACE_EVEXMAP4)
+		{
+		  /* Only "add %reg1, foo@gottpoff(%rip), %reg2" is
+		     allowed in md_assemble.  Set fx_tcbit2 for EVEX
+		     prefix.  */
+		  fixP->fx_tcbit2 = 1;
+		  continue;
+		}
+
+	      if (i.base_reg && i.base_reg->reg_num == RegIP)
+		{
+		  if (reloc_type == BFD_RELOC_X86_64_GOTPC32_TLSDESC)
+		    {
+		      /* Set fx_tcbit for REX2 prefix.  */
+		      if (is_apx_rex2_encoding ())
+			fixP->fx_tcbit = 1;
+		      continue;
+		    }
+		}
+	      /* In 64-bit, i386_validate_fix updates only (%rip)
+		 relocations.  */
+	      else if (object_64bit)
+		continue;
 
 	      /* Check for "call/jmp *mem", "mov mem, %reg",
 		 "test %reg, mem" and "binop mem, %reg" where binop
@@ -12046,10 +12113,22 @@ output_disp (fragS *insn_start_frag, offsetT insn_start_off)
 		{
 		  if (object_64bit)
 		    {
-		      fixP->fx_tcbit = i.rex != 0;
-		      if (i.base_reg
-			  && (i.base_reg->reg_num == RegIP))
-		      fixP->fx_tcbit2 = 1;
+		      if (reloc_type == BFD_RELOC_X86_64_GOTTPOFF)
+			{
+			  /* Set fx_tcbit for REX2 prefix.  */
+			  if (is_apx_rex2_encoding ())
+			    fixP->fx_tcbit = 1;
+			}
+		      else
+			{
+			  /* Set fx_tcbit3 for REX2 prefix.  */
+			  if (is_apx_rex2_encoding ())
+			    fixP->fx_tcbit3 = 1;
+			  else if (i.rex)
+			    fixP->fx_tcbit2 = 1;
+			  else
+			    fixP->fx_tcbit = 1;
+			}
 		    }
 		  else
 		    fixP->fx_tcbit2 = 1;
@@ -15526,6 +15605,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
       case BFD_RELOC_X86_64_TLSLD:
       case BFD_RELOC_X86_64_GOTTPOFF:
       case BFD_RELOC_X86_64_CODE_4_GOTTPOFF:
+      case BFD_RELOC_X86_64_CODE_6_GOTTPOFF:
       case BFD_RELOC_X86_64_GOTPC32_TLSDESC:
       case BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC:
 	value = 0; /* Fully resolved at runtime.  No addend.  */
@@ -16767,7 +16847,7 @@ md_show_usage (FILE *stream)
   -muse-unaligned-vector-move\n\
                           encode aligned vector move as unaligned vector move\n"));
   fprintf (stream, _("\
-  -msse-check=[none|error|warning] (default: warning)\n\
+  -msse-check=[none|error|warning] (default: none)\n\
                           check SSE instructions\n"));
   fprintf (stream, _("\
   -moperand-check=[none|error|warning] (default: warning)\n\
@@ -17107,13 +17187,27 @@ i386_validate_fix (fixS *fixp)
 	   && (!S_IS_DEFINED (fixp->fx_addsy)
 	       || S_IS_EXTERNAL (fixp->fx_addsy));
 
-  if (fixp->fx_tcbit3)
+  /* BFD_RELOC_X86_64_GOTTPOFF:
+      1. fx_tcbit -> BFD_RELOC_X86_64_CODE_4_GOTTPOFF
+      2. fx_tcbit2 -> BFD_RELOC_X86_64_CODE_6_GOTTPOFF
+    BFD_RELOC_X86_64_GOTPC32_TLSDESC:
+      1. fx_tcbit -> BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC
+    BFD_RELOC_32_PCREL:
+      1. fx_tcbit -> BFD_RELOC_X86_64_GOTPCRELX
+      2. fx_tcbit2 -> BFD_RELOC_X86_64_REX_GOTPCRELX
+      3. fx_tcbit3 -> BFD_RELOC_X86_64_CODE_4_GOTPCRELX
+      4. else -> BFD_RELOC_X86_64_GOTPCREL
+   */
+  if (fixp->fx_r_type == BFD_RELOC_X86_64_GOTTPOFF)
     {
-      if (fixp->fx_r_type == BFD_RELOC_X86_64_GOTTPOFF)
+      if (fixp->fx_tcbit)
 	fixp->fx_r_type = BFD_RELOC_X86_64_CODE_4_GOTTPOFF;
-      else if (fixp->fx_r_type == BFD_RELOC_X86_64_GOTPC32_TLSDESC)
-	fixp->fx_r_type = BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC;
+      else if (fixp->fx_tcbit2)
+	fixp->fx_r_type = BFD_RELOC_X86_64_CODE_6_GOTTPOFF;
     }
+  else if (fixp->fx_r_type == BFD_RELOC_X86_64_GOTPC32_TLSDESC
+	   && fixp->fx_tcbit)
+    fixp->fx_r_type = BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC;
 #endif
 
   if (fixp->fx_subsy)
@@ -17125,15 +17219,12 @@ i386_validate_fix (fixS *fixp)
 	      if (!object_64bit)
 		abort ();
 #if defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF)
-	      if (fixp->fx_tcbit2)
-		{
-		  if (fixp->fx_tcbit3)
-		    fixp->fx_r_type = BFD_RELOC_X86_64_CODE_4_GOTPCRELX;
-		  else
-		    fixp->fx_r_type = (fixp->fx_tcbit
-				       ? BFD_RELOC_X86_64_REX_GOTPCRELX
-				       : BFD_RELOC_X86_64_GOTPCRELX);
-		}
+	      if (fixp->fx_tcbit)
+		fixp->fx_r_type = BFD_RELOC_X86_64_GOTPCRELX;
+	      else if (fixp->fx_tcbit2)
+		fixp->fx_r_type = BFD_RELOC_X86_64_REX_GOTPCRELX;
+	      else if (fixp->fx_tcbit3)
+		fixp->fx_r_type = BFD_RELOC_X86_64_CODE_4_GOTPCRELX;
 	      else
 #endif
 		fixp->fx_r_type = BFD_RELOC_X86_64_GOTPCREL;
@@ -17259,6 +17350,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
     case BFD_RELOC_X86_64_DTPOFF64:
     case BFD_RELOC_X86_64_GOTTPOFF:
     case BFD_RELOC_X86_64_CODE_4_GOTTPOFF:
+    case BFD_RELOC_X86_64_CODE_6_GOTTPOFF:
     case BFD_RELOC_X86_64_TPOFF32:
     case BFD_RELOC_X86_64_TPOFF64:
     case BFD_RELOC_X86_64_GOTOFF64:
@@ -17403,6 +17495,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
 	  case BFD_RELOC_X86_64_TLSLD:
 	  case BFD_RELOC_X86_64_GOTTPOFF:
 	  case BFD_RELOC_X86_64_CODE_4_GOTTPOFF:
+	  case BFD_RELOC_X86_64_CODE_6_GOTTPOFF:
 	  case BFD_RELOC_X86_64_GOTPC32_TLSDESC:
 	  case BFD_RELOC_X86_64_CODE_4_GOTPC32_TLSDESC:
 	  case BFD_RELOC_X86_64_TLSDESC_CALL:
@@ -17451,14 +17544,14 @@ tc_x86_parse_to_dw2regnum (expressionS *exp)
 
   if (exp->X_op == O_register && exp->X_add_number >= 0)
     {
+      exp->X_op = O_illegal;
       if ((addressT) exp->X_add_number < i386_regtab_size)
 	{
-	  exp->X_op = O_constant;
 	  exp->X_add_number = i386_regtab[exp->X_add_number]
 			      .dw2_regnum[flag_code >> 1];
+	  if (exp->X_add_number != Dw2Inval)
+	    exp->X_op = O_constant;
 	}
-      else
-	exp->X_op = O_illegal;
     }
 }
 
@@ -17534,7 +17627,7 @@ i386_elf_section_change_hook (void)
       break;
   if (!curr)
     {
-      curr = XNEW (struct i386_segment_info);
+      curr = notes_alloc (sizeof (*curr));
       curr->subseg = info->subseg;
       curr->next = NULL;
       prev->next = curr;

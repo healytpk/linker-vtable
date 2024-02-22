@@ -68,7 +68,6 @@ def start_json_writer(stream, queue):
                 # This is an exit request.  The stream is already
                 # flushed, so all that's left to do is request an
                 # exit.
-                send_gdb("quit")
                 break
             obj["seq"] = seq
             seq = seq + 1
@@ -80,4 +79,4 @@ def start_json_writer(stream, queue):
             stream.write(body_bytes)
             stream.flush()
 
-    start_thread("JSON writer", _json_writer)
+    return start_thread("JSON writer", _json_writer)

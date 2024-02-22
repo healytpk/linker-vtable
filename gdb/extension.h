@@ -103,6 +103,10 @@ enum frame_filter_flag
 
     /* Set this flag if elided frames should not be printed.  */
     PRINT_HIDE = 1 << 5,
+
+    /* Set this flag if pretty printers for frame arguments should not
+       be invoked.  */
+    PRINT_RAW_FRAME_ARGUMENTS = 1 << 6,
   };
 
 DEF_ENUM_FLAGS_TYPE (enum frame_filter_flag, frame_filter_flags);
@@ -291,7 +295,7 @@ extern int apply_ext_lang_val_pretty_printer
    const struct language_defn *language);
 
 extern enum ext_lang_bt_status apply_ext_lang_frame_filter
-  (frame_info_ptr frame, frame_filter_flags flags,
+  (const frame_info_ptr &frame, frame_filter_flags flags,
    enum ext_lang_frame_args args_type,
    struct ui_out *out, int frame_low, int frame_high);
 

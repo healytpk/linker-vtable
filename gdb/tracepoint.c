@@ -206,7 +206,7 @@ set_tracepoint_num (int num)
    the traceframe context (line, function, file).  */
 
 static void
-set_traceframe_context (frame_info_ptr trace_frame)
+set_traceframe_context (const frame_info_ptr &trace_frame)
 {
   CORE_ADDR trace_pc;
   struct symbol *traceframe_fun;
@@ -253,8 +253,7 @@ set_traceframe_context (frame_info_ptr trace_frame)
 struct trace_state_variable *
 create_trace_state_variable (const char *name)
 {
-  tvariables.emplace_back (name, next_tsv_number++);
-  return &tvariables.back ();
+  return &tvariables.emplace_back (name, next_tsv_number++);
 }
 
 /* Look for a trace state variable of the given name.  */

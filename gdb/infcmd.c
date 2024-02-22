@@ -1743,7 +1743,7 @@ finish_backward (struct finish_command_fsm *sm)
    frame that called the function we're about to step out of.  */
 
 static void
-finish_forward (struct finish_command_fsm *sm, frame_info_ptr frame)
+finish_forward (struct finish_command_fsm *sm, const frame_info_ptr &frame)
 {
   struct frame_id frame_id = get_frame_id (frame);
   struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -1757,9 +1757,6 @@ finish_forward (struct finish_command_fsm *sm, frame_info_ptr frame)
 					     get_stack_frame_id (frame),
 					     bp_finish);
 
-  /* set_momentary_breakpoint invalidates FRAME.  */
-  frame = nullptr;
-
   set_longjmp_breakpoint (tp, frame_id);
 
   /* We want to print return value, please...  */
@@ -1771,9 +1768,10 @@ finish_forward (struct finish_command_fsm *sm, frame_info_ptr frame)
 /* Skip frames for "finish".  */
 
 static frame_info_ptr
-skip_finish_frames (frame_info_ptr frame)
+skip_finish_frames (const frame_info_ptr &initial_frame)
 {
   frame_info_ptr start;
+  frame_info_ptr frame = initial_frame;
 
   do
     {
@@ -2259,7 +2257,7 @@ default_print_one_register_info (struct ui_file *file,
 void
 default_print_registers_info (struct gdbarch *gdbarch,
 			      struct ui_file *file,
-			      frame_info_ptr frame,
+			      const frame_info_ptr &frame,
 			      int regnum, int print_all)
 {
   int i;
@@ -2419,7 +2417,7 @@ info_registers_command (const char *addr_exp, int from_tty)
 
 static void
 print_vector_info (struct ui_file *file,
-		   frame_info_ptr frame, const char *args)
+		   const frame_info_ptr &frame, const char *args)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
 
@@ -2827,14 +2825,14 @@ detach_command (const char *args, int from_tty)
   /* Hold a strong reference to the target while (maybe)
      detaching the parent.  Otherwise detaching could close the
      target.  */
-  auto target_ref
-    = target_ops_ref::new_reference (current_inferior ()->process_target ());
+  inferior *inf = current_inferior ();
+  auto target_ref = target_ops_ref::new_reference (inf->process_target ());
 
   /* Save this before detaching, since detaching may unpush the
      process_stratum target.  */
   bool was_non_stop_p = target_is_non_stop_p ();
 
-  target_detach (current_inferior (), from_tty);
+  target_detach (inf, from_tty);
 
   update_previous_thread ();
 
@@ -2843,11 +2841,11 @@ detach_command (const char *args, int from_tty)
      this within target_detach because that is also used when
      following child forks, and in that case we will want to transfer
      breakpoints to the child, not delete them.  */
-  breakpoint_init_inferior (inf_exited);
+  breakpoint_init_inferior (inf, inf_exited);
 
   /* If the solist is global across inferiors, don't clear it when we
      detach from a single inferior.  */
-  if (!gdbarch_has_global_solist (current_inferior ()->arch ()))
+  if (!gdbarch_has_global_solist (inf->arch ()))
     no_shared_libraries (nullptr, from_tty);
 
   if (deprecated_detach_hook)
@@ -2956,7 +2954,7 @@ interrupt_command (const char *args, int from_tty)
 
 void
 default_print_float_info (struct gdbarch *gdbarch, struct ui_file *file,
-			  frame_info_ptr frame, const char *args)
+			  const frame_info_ptr &frame, const char *args)
 {
   int regnum;
   int printed_something = 0;

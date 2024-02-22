@@ -3928,8 +3928,7 @@ count_section_dynsyms (bfd *output_bfd, struct bfd_link_info *info)
   bfd_size_type count;
 
   count = 0;
-  if (bfd_link_pic (info)
-      || elf_hash_table (info)->is_relocatable_executable)
+  if (bfd_link_pic (info))
     {
       asection *p;
       const struct elf_backend_data *bed;
@@ -6842,6 +6841,7 @@ mips_elf_create_dynamic_relocation (bfd *output_bfd,
 	indx = 0;
       else if (sec == NULL || sec->owner == NULL)
 	{
+	  BFD_ASSERT (0);
 	  bfd_set_error (bfd_error_bad_value);
 	  return false;
 	}
@@ -11186,7 +11186,13 @@ _bfd_mips_elf_finish_dynamic_symbol (bfd *output_bfd,
 	 sign extension at runtime in the stub, resulting in a negative
 	 index value.  */
       if (h->dynindx & ~0x7fffffff)
-	return false;
+	{
+	  _bfd_error_handler
+	    (_("%pB: cannot handle more than %d dynamic symbols"),
+	     output_bfd, 0x7fffffff);
+	  bfd_set_error (bfd_error_bad_value);
+	  return false;
+	}
 
       /* Fill the stub.  */
       if (micromips_p)
@@ -12529,22 +12535,24 @@ _bfd_mips_final_write_processing (bfd *abfd)
 	case SHT_MIPS_GPTAB:
 	  BFD_ASSERT ((*hdrpp)->bfd_section != NULL);
 	  name = bfd_section_name ((*hdrpp)->bfd_section);
-	  BFD_ASSERT (name != NULL
-		      && startswith (name, ".gptab."));
-	  sec = bfd_get_section_by_name (abfd, name + sizeof ".gptab" - 1);
-	  BFD_ASSERT (sec != NULL);
-	  (*hdrpp)->sh_info = elf_section_data (sec)->this_idx;
+	  if (startswith (name, ".gptab."))
+	    {
+	      sec = bfd_get_section_by_name (abfd, name + sizeof ".gptab" - 1);
+	      if (sec != NULL)
+		(*hdrpp)->sh_info = elf_section_data (sec)->this_idx;
+	    }
 	  break;
 
 	case SHT_MIPS_CONTENT:
 	  BFD_ASSERT ((*hdrpp)->bfd_section != NULL);
 	  name = bfd_section_name ((*hdrpp)->bfd_section);
-	  BFD_ASSERT (name != NULL
-		      && startswith (name, ".MIPS.content"));
-	  sec = bfd_get_section_by_name (abfd,
-					 name + sizeof ".MIPS.content" - 1);
-	  BFD_ASSERT (sec != NULL);
-	  (*hdrpp)->sh_link = elf_section_data (sec)->this_idx;
+	  if (startswith (name, ".MIPS.content"))
+	    {
+	      sec = bfd_get_section_by_name (abfd,
+					     name + sizeof ".MIPS.content" - 1);
+	      if (sec != NULL)
+		(*hdrpp)->sh_link = elf_section_data (sec)->this_idx;
+	    }
 	  break;
 
 	case SHT_MIPS_SYMBOL_LIB:
@@ -12559,19 +12567,16 @@ _bfd_mips_final_write_processing (bfd *abfd)
 	case SHT_MIPS_EVENTS:
 	  BFD_ASSERT ((*hdrpp)->bfd_section != NULL);
 	  name = bfd_section_name ((*hdrpp)->bfd_section);
-	  BFD_ASSERT (name != NULL);
 	  if (startswith (name, ".MIPS.events"))
 	    sec = bfd_get_section_by_name (abfd,
 					   name + sizeof ".MIPS.events" - 1);
+	  else if (startswith (name, ".MIPS.post_rel"))
+	    sec = bfd_get_section_by_name (abfd,
+					   name + sizeof ".MIPS.post_rel" - 1);
 	  else
-	    {
-	      BFD_ASSERT (startswith (name, ".MIPS.post_rel"));
-	      sec = bfd_get_section_by_name (abfd,
-					     (name
-					      + sizeof ".MIPS.post_rel" - 1));
-	    }
-	  BFD_ASSERT (sec != NULL);
-	  (*hdrpp)->sh_link = elf_section_data (sec)->this_idx;
+	    sec = NULL;
+	  if (sec != NULL)
+	    (*hdrpp)->sh_link = elf_section_data (sec)->this_idx;
 	  break;
 
 	case SHT_MIPS_XHASH:
