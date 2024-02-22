@@ -247,22 +247,6 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
   (*default_bfd_error_handler) (fmt, ap);
 }
 
-static void ThisFile_Polymorphism_Submit_All_Symbols(struct bfd *const pbfd)
-{
-  long const storage_needed = bfd_get_symtab_upper_bound(pbfd);
-  if ( storage_needed <= 0 ) return;
-  asymbol **const symbol_table = xmalloc(storage_needed);
-  long const number_of_symbols = bfd_canonicalize_symtab(pbfd, symbol_table);
-  for ( long i = 0; i < number_of_symbols; ++i )
-  {
-    Polymorphism_Process_Symbol_2nd_Run( symbol_table[i]->name, symbol_table[i]->value );  // might be '__map_typeinfo_vtable'
-    // The section can also be gotten from:
-    //   symbol_table[i]->section->name;
-    // (for example: ".data.rel.ro")
-  }
-  free(symbol_table);
-}
-
 int
 main (int const intact_argc, char **const intact_argv)
 {
@@ -553,37 +537,7 @@ main (int const intact_argc, char **const intact_argv)
     }
   link_info.output_bfd->flags
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
-  ldwrite (); // ==================== The next line calls bfd_final_link(link_info.output_bfd, &link_info)
-
-  FILE *const f = fopen(output_filename, "rb+");
-  if ( NULL == f )
-  {
-    printf("Unable to re-open the output file to overwrite __map_typeinfo_vtable. Aborting.\n");
-    abort();
-  }
-
-  if ( ! Polymorphism_Seek_To_UUID_In_File(f) ) { printf("Couldn't find 128-Bit random number in binary output file. Aborting\n"); abort(); }
-
-  //===========================================================================
-  //=================== Beginning of Polymorphism
-  ThisFile_Polymorphism_Submit_All_Symbols(link_info.output_bfd);
-  if ( (uint32_t)-1 == g_offset_of_map_typeinfo_vtable )
-  {
-    puts("Unable to determine offset of __map_typeinfo_vtable in output file. Aborting.");
-    abort();
-  }
-  void *pmap = NULL;
-  uint32_t const map_size = Polymorphism_Finalise_Symbols_And_Create_Map(&pmap);
-  fwrite(&map_size                       , 1, sizeof(uint32_t), f);   // write the size of the map (in bytes)
-  fwrite(&g_offset_of_map_typeinfo_vtable, 1, sizeof(uint32_t), f);   // write the offset of __map_typeinfo_vtable
-  printf("Map Size: %lu\n", (long unsigned)map_size);
-  if ( 0u != map_size ) fwrite(pmap, 1, map_size, f);
-  //printf("Map address = %p, Map size = %zu bytes\n", pmap, map_size);
-  free(pmap);
-  //printf("pmap has been freed.\n");
-  fclose(f);
-  //=================== End of Polymorphism
-  //===========================================================================
+  ldwrite ();
 
   if (config.map_file != NULL)
     lang_map ();
