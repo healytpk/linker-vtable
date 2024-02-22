@@ -10,7 +10,6 @@ extern char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const 
 extern char unsigned const (*Polymorphism_Get_128_Random(void))[16u];  // Allow for (16==CHAR_BIT)
 
 extern bool Polymorphism_Process_Symbol_1st_Run(char const*);
-extern bool Polymorphism_Process_Symbol_2nd_Run(char const*, uint32_t);
 
 extern char const *Polymorphism_Get_Name_Extra_Object_File(void);
 extern char const *Polymorphism_Create_Extra_Object_File(void);

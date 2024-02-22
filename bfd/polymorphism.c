@@ -125,24 +125,6 @@ bool Polymorphism_Process_Symbol_1st_Run(char const *const arg)
     return true;
 }
 
-bool Polymorphism_Process_Symbol_2nd_Run(char const *const arg, uint32_t const offset)
-{
-    if ( NULL == arg ) return false;
-
-    if ( strlen(arg) < 6u ) return false;
-
-    /**/ if ( 0 == strncmp("_ZTV", arg, 4u) ) { if ( !ListSymbol_revise( &g_vtables  , arg + 4u, offset ) ) abortwhy("VTable missing on 1st run is present on 2nd run"); }
-    else if ( 0 == strncmp("_ZTI", arg, 4u) ) { if ( !ListSymbol_revise( &g_typeinfos, arg + 4u, offset ) ) abortwhy("Typeinfo missing on 1st run is present on 2nd run"); }
-    else if ( 0 == strcmp("__map_typeinfo_vtable", arg) )
-    {
-        g_offset_of_map_typeinfo_vtable = offset;
-        return false;  // yes this is correct
-    }
-    else return false;
-
-    return true;
-}
-
 static void Polymorphism_Populate_Map_Numbers(void)
 {
     size_t index = (size_t)-1;
