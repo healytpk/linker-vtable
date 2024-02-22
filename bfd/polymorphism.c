@@ -12,7 +12,6 @@ extern void *xmalloc(size_t);
 extern char *xstrdup(char const*);
 
 static char g_extra_object_file[256u] = "/tmp/linker_map_typeinfo_vtable_";
-uint32_t g_offset_of_map_typeinfo_vtable = (uint32_t)-1;
 
 static void abortwhy(char const *const p)
 {
@@ -29,17 +28,12 @@ char **Duplicate_Argv_Plus_Extra(int const argc, char **argv, char const *const 
     return new_argv;
 }
 
-struct MappingTypeinfoVtable {
-    uint32_t offset_typeinfo, offset_vtable;
-};
-
-static struct MappingTypeinfoVtable *g_polymap = NULL;
+static char *g_polymap = NULL;
 static size_t g_polymap_size = 0u;
 
 struct ListSymbolNode {
     struct ListSymbolNode *next;
     char const *name;
-    uint32_t offset;
 };
 
 struct ListSymbol {
@@ -51,9 +45,10 @@ struct ListSymbol g_vtables = {NULL,NULL}, g_typeinfos = {NULL,NULL};
 static struct ListSymbolNode *NewListSymbolNode(char const *const arg)
 {
     struct ListSymbolNode *const p = xmalloc( sizeof(struct ListSymbolNode) );
-    p->next   = NULL;
-    p->name   = xstrdup(arg);
-    p->offset = 0u;
+    p->next = NULL;
+    p->name = xstrdup(arg);
+    char *const atsymbol = strchr(p->name, '@');
+    if ( NULL != atsymbol ) *atsymbol = '\0';
     return p;
 }
 
@@ -87,31 +82,6 @@ static void ListSymbol_append(struct ListSymbol *const ls, char const *const arg
    ls->tail       = newtail;
 }
 
-static int ListSymbol_revise(struct ListSymbol *const ls, char const *const arg, size_t const offset)
-{
-    if ( NULL==ls || NULL==arg || '\0'==arg[0u] ) return 0;
-
-    struct ListSymbolNode *const p = ListSymbol_find(ls,arg);
-
-    if ( NULL == p ) return 0;
-
-    p->offset = offset;
-
-    return 1;
-}
-
-static size_t Count_Pairs(void)
-{
-    size_t count = 0u;
-
-    for ( struct ListSymbolNode const *n = g_vtables.head; NULL != n; n = n->next )
-    {
-      if ( NULL != ListSymbol_find(&g_typeinfos,n->name) ) ++count;
-    }
-
-    return count;
-}
-
 bool Polymorphism_Process_Symbol_1st_Run(char const *const arg)
 {
     if ( NULL == arg ) return false;
@@ -125,66 +95,35 @@ bool Polymorphism_Process_Symbol_1st_Run(char const *const arg)
     return true;
 }
 
-static void Polymorphism_Populate_Map_Numbers(void)
+static void Polymorphism_Finalise_Symbols_And_Create_Map(void)
 {
-    size_t index = (size_t)-1;
+    assert(   0u == g_polymap_size );
+    assert( NULL == g_polymap      );
 
-    //printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
+    size_t len = 0u;
+
     for ( struct ListSymbolNode const *nv = g_vtables.head; NULL != nv; nv = nv->next )
     {
         struct ListSymbolNode const *const ni = ListSymbol_find(&g_typeinfos,nv->name);
         if ( NULL == ni ) continue;
-        ++index;
-        g_polymap[index].offset_typeinfo = ni->offset;
-        g_polymap[index].offset_vtable   = nv->offset;
-        //printf("  { %*zu, %*td },  // _Z%s\n", 20, g_polymap[index].offset_typeinfo, 20, g_polymap[index].offset_vtable, nv->name);
+        len += strlen(nv->name) + 1u;  // +1 for the null terminator
+        ++g_polymap_size;
     }
-    //puts("};");
-}
 
-static int compare(void const *const va, void const *const vb)
-{  
-    struct MappingTypeinfoVtable const *const a = va,
-                                       *const b = vb;
+    if ( 0u == g_polymap_size ) return;
+    g_polymap = xmalloc(len);
+    g_polymap[0u] = '\0';
 
-    if ( (0u==a->offset_typeinfo && 0u==a->offset_vtable) && (0u==b->offset_typeinfo && 0u==b->offset_vtable) ) return 0;
-
-    if ( 0u==a->offset_typeinfo && 0u==a->offset_vtable ) return +1;
-
-    if ( 0u==b->offset_typeinfo && 0u==b->offset_vtable ) return -1;
-
-    if ( a->offset_typeinfo == b->offset_typeinfo ) abortwhy("Two typeinfos cannot have the same address");    // but vtables can
-
-    return (a->offset_typeinfo < b->offset_typeinfo) ? -1 : +1;
-}
-
-size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
-{
-    *pp = NULL;
-    g_polymap_size = Count_Pairs();
-    if ( 0u == g_polymap_size ) return 0u;
-    g_polymap = xmalloc(g_polymap_size * sizeof(struct MappingTypeinfoVtable));
-    Polymorphism_Populate_Map_Numbers();
-
-    qsort(g_polymap, g_polymap_size, sizeof *g_polymap, compare);
-
-    for ( unsigned i = 0u; i < g_polymap_size; ++i )
+    char *start = g_polymap;
+    for ( struct ListSymbolNode const *nv = g_vtables.head; NULL != nv; nv = nv->next )
     {
-        if ( 0u==g_polymap[i].offset_typeinfo && 0u==g_polymap[i].offset_vtable )
-        {
-            g_polymap_size = i;
-            break;
-        }
+        struct ListSymbolNode const *const ni = ListSymbol_find(&g_typeinfos,nv->name);
+        if ( NULL == ni ) continue;
+        strcpy( start, nv->name );
+        start += strlen(start) + 1u;
     }
 
-    /*
-    printf("std::pair< std::size_t, std::size_t > map_typeinfo_vtable[] = {\n");
-    for ( size_t i = 0u; i < g_polymap_size; ++i )
-    {
-        printf("  { %*zu, %*td },\n", 20, g_polymap[i].offset_typeinfo, 20, g_polymap[i].offset_vtable);
-    }
-    puts("};");
-    */
+    assert( '\0' != g_polymap[0u] );
 
     // ========================================== Begin freeing memory
     for ( struct ListSymbol *ls = &g_vtables; ; ls = &g_typeinfos )
@@ -200,12 +139,9 @@ size_t Polymorphism_Finalise_Symbols_And_Create_Map(void **const pp)
     }
     g_vtables.head = g_vtables.tail = g_typeinfos.head = g_typeinfos.tail = NULL;
     // ========================================== End freeing memory
-
-    *pp = g_polymap;
-    return g_polymap_size * sizeof(struct MappingTypeinfoVtable);
 }
 
-char unsigned const (*Polymorphism_Get_128_Random(void))[16u]
+static char unsigned const (*Polymorphism_Get_128_Random(void))[16u]
 {
     static char unsigned buf[16u];
     static bool already_done = false;
@@ -242,10 +178,7 @@ char const *Polymorphism_Get_Name_Extra_Object_File(void)  // string returned mu
 
 char const *Polymorphism_Create_Extra_Object_File(void)
 {
-    uint32_t const count = Count_Pairs();
-    uint32_t const count_bytes = count * sizeof(struct MappingTypeinfoVtable);
-
-    Polymorphism_Get_Name_Extra_Object_File();  // in case it wasn't already called
+    Polymorphism_Finalise_Symbols_And_Create_Map();  // in case it wasn't already called
     char *const pdot = g_extra_object_file + strlen(g_extra_object_file) - 2u;
 
     if ( '.' != *pdot ) abortwhy("The string 'g_extra_object_file' is corrupt");
@@ -255,30 +188,33 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     if ( NULL == f ) abortwhy("fopen failed to open the extra object file");
 
     fprintf(f,
-            "#include <stdint.h>\n"
-            "extern _Alignas(long) char const __map_typeinfo_vtable[ 2ul*sizeof(uint32_t) + %luul ] __attribute__((section(\".data.rel.ro\")));\n"
-            "       _Alignas(long) char const __map_typeinfo_vtable[ 2ul*sizeof(uint32_t) + %luul ] = {\n  ",
-            (long unsigned)count_bytes,
-            (long unsigned)count_bytes);
+            "extern long long unsigned const __map_typeinfo_vtable_size __attribute__((section(\".data.rel.ro\")));\n"
+            "       long long unsigned const __map_typeinfo_vtable_size = %lluu;\n\n",
+            (long long unsigned)g_polymap_size);
 
-    char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
-    for ( unsigned i = 0u; i < 16u; ++i )
+    char *p = g_polymap;
+    for ( size_t i = 0u; i < g_polymap_size; ++i )
     {
-        fprintf(f, "0x%02x, ", (unsigned)(*mybytes)[i]);
+        fprintf(f,"extern void const *const *const _ZTI%s;\n"
+                  "extern void const *const *const _ZTV%s;\n",p,p);
+        p += strlen(p) + 1u;
     }
-    fprintf(f, "  /* These first 16 bytes are the random 128-Bit number */\n  ");
 
-    size_t remaining = count_bytes;
-    if ( count_bytes >= 8u ) remaining -= 8;
-                        else remaining  = 0;
+    fprintf(f,
+            "\n"
+            "extern void const *const __map_typeinfo_vtable[%lluu][2u] __attribute__((section(\".data.rel.ro\")));\n"
+            "       void const *const __map_typeinfo_vtable[%lluu][2u] = {\n",
+            (long long unsigned)g_polymap_size,
+            (long long unsigned)g_polymap_size);
 
-    char unsigned val = 0u;
-    for ( size_t i = 0u; i < remaining; ++i )
+    p = g_polymap;
+    for ( size_t i = 0u; i < g_polymap_size; ++i )
     {
-        fprintf(f, "0x%02x, ", (unsigned)val++);
-        if ( 0u == (val % 16u) ) fprintf(f, "\n  ");
+        fprintf(f,"  { &_ZTI%s , &_ZTV%s },\n",p,p);
+        p += strlen(p) + 1u;
     }
-    fprintf(f,"\n};\n");
+
+    fprintf(f,"};\n");
     fclose(f);
 
     char str[512u] = "gcc -s -O3 -DNDEBUG -c ";
@@ -290,36 +226,6 @@ char const *Polymorphism_Create_Extra_Object_File(void)
     int const dummy = system(str);
     (void)dummy;
     return g_extra_object_file;
-}
-
-bool Polymorphism_Seek_To_UUID_In_File(FILE *const f)
-{
-    char unsigned const (*const mybytes)[16u] = Polymorphism_Get_128_Random();
-    //for ( unsigned i = 0u; i < 16u; ++i ) printf("%02x", (unsigned)(*mybytes)[i] );
-    unsigned i = 0u;
-    for (; /* ever */ ;)
-    {
-        char const c = (char)fgetc(f);
-        if ( ferror(f) || feof(f) ) return false;
-        for (; /* ever */ ;)
-        {
-            if ( (char unsigned)c == (*mybytes)[i++] )
-            {
-                if ( i >= 16u )
-                {
-                    fseek(f,-16,SEEK_CUR);
-                    return true;
-                }
-                break;
-            }
-            else
-            {
-                unsigned const tmp = i;
-                i = 0;
-                if ( 0u != tmp  ) break;
-            }
-        }
-    }
 }
 
 //================================================================================================
