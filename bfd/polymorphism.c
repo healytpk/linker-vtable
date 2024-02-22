@@ -56,9 +56,13 @@ static struct ListSymbolNode *ListSymbol_find(struct ListSymbol *const ls, char 
 {
     if ( NULL==ls || NULL==arg || '\0'==arg[0u] ) return NULL;
 
+    char const *const atsymbol = strchr(arg, '@');
+
+    size_t const count = (NULL == atsymbol) ? -1 : (atsymbol - arg);
+
     for ( struct ListSymbolNode *n = ls->head; NULL != n; n = n->next )
     {
-       if ( 0 == strcmp(n->name,arg) ) return n;
+       if ( 0 == strncmp(n->name,arg,count) ) return n;
     }
 
     return NULL;
