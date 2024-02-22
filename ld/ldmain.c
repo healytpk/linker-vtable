@@ -537,6 +537,7 @@ main (int const intact_argc, char **const intact_argv)
     }
   link_info.output_bfd->flags
     |= flags & bfd_applicable_file_flags (link_info.output_bfd);
+
   ldwrite ();
 
   if (config.map_file != NULL)
